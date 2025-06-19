@@ -15,6 +15,17 @@ const promptSchema = new Schema({
         required: true,
         index: true,
     },
+    statusId: {
+        type: String,
+        required: true,
+        index: true,
+        default: null
+    },
+    status: {
+        type: String,
+        enum: ["pending", "processing", "completed", "failed"],
+        default: "pending",
+    },
     errorMessage: {
         type: String,
         default: null,
