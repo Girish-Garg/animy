@@ -1,51 +1,186 @@
+import Album from "../Schema/album.schema";
+import Chat from "../Schema/chat.schema";
+import Prompt from "../Schema/prompt.schema";
+import User from "../Schema/user.schema";
+import { deleteFromR2 } from "../utils/deleteFromR2";
 
+const MaxChatLimit = 5;
 
-const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_GENAI_API_KEY });
+export const createChat = async (req, res) => {
+  try {
+    const user = req.user;
+    const title = 'New Chat';
+    
+    const userWithChats = await User.findById(user._id).populate({
+      path: 'chatIds',
+      select: 'updatedAt',
+      options: { sort: { updatedAt: 1 }}
+    });
+    const existingChats = userWithChats.chatIds || [];
 
-// Store previously generated code
-let previousCode = "";
+    const videoPaths = []
+    let isDeleted = false;
+    if( existingChats.length >= MaxChatLimit ) {
+      const oldestChatId = existingChats[0];
+      const oldestChat = await Chat.findById(oldestChatId).populate('prompts');
+      if( oldestChat && oldestChat.prompts.length > 0){
+        for (const prompt of oldestChat.prompts){
+          if (prompt.videoPath) {
+            videoPaths.push(prompt.videoPath);
+          }
+          await Prompt.findByIdAndDelete(prompt._id);
+        }
+      }
+      await Chat.findByIdAndDelete(oldestChatId);
+      await User.findByIdAndUpdate(user._id, 
+        { $pull: { chatIds: oldestChatId } 
+      });
+      isDeleted = true;
+      await Promise.all(
+        videoPaths.map(async (videoPath) => {
+          const exists = await Album.exists({
+            userId: user._id,
+            videoPaths: videoPath 
+          });
 
-// Try to read previous code if it exists
-try {
-  if (fs.existsSync("stack_diagram.py")) {
-    previousCode = fs.readFileSync("stack_diagram.py", "utf8");
-    console.log("Loaded previous code from stack_diagram.py");
+          if (!exists) {
+            await deleteFromR2(videoPath);
+          }
+        })
+      );
+    }
+
+    const newChat = new Chat({
+      userId: user._id,
+      title,
+      prompts: []
+    });
+    await newChat.save();
+    await User.findByIdAndUpdate(user._id, 
+      { $push: { chatIds: newChat._id } 
+    });
+
+    res.status(201).json({
+      type: isDeleted ? "chat_replaced" : "success",
+      message: "Chat created successfully",
+      chat: newChat,
+    });
+  } catch (err) {
+    console.error('Error in createChat controller:', err);
+    return res.status(500).json({ type: 'error', error: 'Internal Server Error' });
   }
-} catch (err) {
-  console.log("No previous code found or error reading file");
 }
 
-var prompt = `the arrows are not looking good, can you make the arrows look better and the third box is cutting down make them look more better also add a title to the diagram?`;
-
-async function main() {
-
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash-preview-05-20",
-    contents: `For the following prompt, you will give only the python code nothing else: ${prompt}
-    The older code you the given is ${previousCode} now generate the whole code again with the new changes and do not repeat the previous code`,
-  });
-  
-  // Extract code between ```python and ``` markers
-  var fullText = response.text;
-  var code = fullText;
-  
-  // Check if the response contains code blocks
-  if (fullText.includes("```python")) {
-    const codeBlockRegex = /```python\n([\s\S]*?)```/;
-    const match = fullText.match(codeBlockRegex);
-    if (match && match[1]) {
-      code = match[1]; // Extract only the code between the markers
+export const getChat = async (req, res) => {
+  try {
+    const user = req.user;
+    const { chatId } = req.params;
+    if (!chatId) {
+      return res.status(400).json({ type: 'error', error: 'Chat ID is required' });
     }
+
+    const chat = await Chat.findOne({ _id: chatId, userId: user._id}).populate({
+      path: 'prompts',
+      select: 'videoPath prompt createdAt updatedAt',
+      options: { sort: { createdAt: 1 }}
+    }).lean();
+    if (!chat) {
+      return res.status(404).json({ type: 'error', error: 'Chat not found or unauthorized' });
+    }
+
+    return res.status(200).json({
+      type: "success",
+      message: "Chat retrieved successfully",
+      chat,
+    });
+  } catch (err) {
+    console.error('Error in getChats controller:', err);
+    return res.status(500).json({ type: 'error', error: 'Internal Server Error' });
   }
-    fs.writeFile("stack_diagram.py", code, (err) => {
-    if (err) {
-      console.error("Error writing file:", err);
-    } else {
-      console.log("File written successfully: stack_diagram.py");
-      // Update the previousCode variable for next run
-      previousCode = code;
-    }
-  });
 }
 
-main();
+export const getAllChats = async (req, res) => {
+  try {
+    const user = req.user;
+
+    const chats = await Chat.find({ userId: user._id })
+      .select('title createdAt')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return res.status(200).json({
+      type: "success",
+      message: "Chats retrieved successfully",
+      chats,
+    });
+  } catch (err) {
+    console.error('Error in getAllChats controller:', err);
+    return res.status(500).json({ type: 'error', error: 'Internal Server Error' });
+  }
+}
+
+export const deleteChat = async (req, res) => {
+  try {
+    const user = req.user;
+    const { chatId } = req.params;
+    if (!chatId) {
+      return res.status(400).json({ type: 'error', error: 'Chat ID is required' });
+    }
+
+    const chat  = await Chat.findOne({_id: chatId, userId: user._id}).populate('prompts');
+    if (!chat) {
+      return res.status(404).json({ type: 'error', error: 'Chat not found or unauthorized' });
+    }
+
+    const videoPathsToCheck = chat.prompts.map(p => p.videoPath).filter(Boolean);
+    await Prompt.deleteMany({ _id: { $in: chat.prompts.map(p => p._id) } });
+    await Chat.findByIdAndDelete(chatId);
+    await User.findByIdAndUpdate(user._id, { $pull: { chatIds: chat._id } });
+
+    const deletionChecks = videoPathsToCheck.map(async (videoPath) => {
+      const existsInAlbum = await Album.exists({ userId: user._id, videoPaths: videoPath });
+      if (!existsInAlbum) {
+        await deleteFromR2(videoPath);
+      }
+    });
+    await Promise.all(deletionChecks);
+
+    return res.status(200).json({
+      type: "success",
+      message: "Chat deleted successfully",
+    });
+  } catch (err) {
+    console.error('Error in deleteChat controller:', err);
+    return res.status(500).json({ type: 'error', error: 'Internal Server Error' });
+  }
+}
+
+export const renameChat = async (req, res) => {
+  try {
+    const user = req.user;
+    const { chatId } = req.params;
+    const { title } = req.body;
+    if (!chatId || !title) {
+      return res.status(400).json({ type: 'error', error: 'Chat ID and title are required' });
+    }
+
+    const chat = await Chat.findOneAndUpdate(
+      { _id: chatId, userId: user._id },
+      { title: newTitle },
+      { new: true }
+    );
+    if (!chat) {
+      return res.status(404).json({ type: 'error', error: 'Chat not found or unauthorized' });
+    }
+
+    return res.status(200).json({
+      type: "success",
+      message: "Chat renamed successfully",
+      chat
+    });
+    
+  } catch (err) {
+    console.error('Error in renameChat controller:', err);
+    return res.status(500).json({ type: 'error', error: 'Internal Server Error' });
+  }
+}

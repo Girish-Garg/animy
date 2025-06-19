@@ -1,11 +1,15 @@
 import express from 'express';
-import chat from '../controllers/chat.controller.js';
-import newChat from '../controllers/newChat.controller.js';
-import prompt from '../controllers/prompt.controller.js';
+import clerkAuthMiddleware from '../middleware/clerkAuth.middleware.js';
+import { createChat, deleteChat, getAllChats, getChat, renameChat } from '../controllers/chat.controller.js';
 const router = express.Router();
 
-router.get('/:chatId', chat);
-router.post('/:chatId/prompt', prompt);
-router.post('/:chatId/new', newChat);
+router.use(clerkAuthMiddleware);
+
+router.post('/', createChat);
+router.get('/', getAllChats);
+router.get('/:chatId', getChat);
+router.delete('/:chatId', deleteChat);
+router.patch('/:chatId/rename', renameChat);
+router.post('/:chatId/generate')
 
 export default router;

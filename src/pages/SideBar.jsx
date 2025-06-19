@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import {
   SidebarProvider,
   Sidebar,
@@ -21,8 +22,16 @@ import {
   HelpCircleIcon,
 } from "lucide-react";
 
-export default function Dashboard() {  
+export default function Layout() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [activePage, setActivePage] = useState('dashboard');
+  
+  // Extract the current path without leading slash
+  useEffect(() => {
+    const path = location.pathname.replace(/^\//, '') || 'dashboard';
+    setActivePage(path);
+  }, [location]);
   
   const navItems = [
     { key: 'dashboard', label: 'Dashboard', icon: HomeIcon },
@@ -34,8 +43,7 @@ export default function Dashboard() {
   const accountItems = [
     { key: 'profile', label: 'Profile', icon: UserIcon },
   ];
-  
-  const renderMenuItem = (item) => {
+    const renderMenuItem = (item) => {
     const { key, label, icon: Icon } = item;
     const isActive = activePage === key;
     
@@ -51,8 +59,11 @@ export default function Dashboard() {
               : "hover:bg-[#1A1F37]/40 hover:shadow-md hover:translate-x-1"
             }
           `}
-          onClick={() => setActivePage(key)}
-        >   
+          onClick={() => {
+            navigate(`/${key}`);
+            setActivePage(key);
+          }}
+        >
           <div className={`flex h-8 w-8 items-center justify-center rounded-[12px] transition-all duration-100
             ${isActive 
               ? 'bg-gradient-to-br from-[#0075FF] to-blue-500 shadow-md shadow-blue-500/20'
@@ -153,13 +164,7 @@ export default function Dashboard() {
               <h1 className="text-2xl font-bold bg-gradient-to-r from-white to-blue-200 bg-clip-text text-transparent">{activePage.charAt(0).toUpperCase() + activePage.slice(1)}</h1>
               <div className="flex-1"></div>
             </div>
-          
-            <div className="grid grid-cols-1 gap-6">
-              <div className="p-6 bg-[#1A1F37]/80 rounded-xl shadow-lg border border-blue-900/20 hover:border-blue-700/30 transition-all duration-300">
-                <h2 className="text-xl font-medium">Welcome to your {activePage} page</h2>
-                <p className="mt-2 text-gray-400">This is a placeholder for your {activePage} content.</p>
-              </div>
-            </div>
+            <Outlet />
         </SidebarInset>
       </SidebarProvider>
     </div>
