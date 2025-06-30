@@ -1,0 +1,61 @@
+/* AlbumOverlay animations and styles */
+.album-overlay-backdrop {
+  backdrop-filter: blur(10px);
+}
+
+.album-overlay-content {
+  background-color: rgba(0, 17, 56, 0.7);
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3),
+              0 10px 10px -5px rgba(0, 0, 0, 0.2);
+}
+
+.album-card {
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.album-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+}
+
+/* Placeholder gradient backgrounds */
+.placeholder-1 { background: linear-gradient(135deg, #1e3a8a, #3b82f6); }
+.placeholder-2 { background: linear-gradient(135deg, #4f46e5, #8b5cf6); }
+.placeholder-3 { background: linear-gradient(135deg, #7e22ce, #d946ef); }
+.placeholder-4 { background: linear-gradient(135deg, #0284c7, #38bdf8); }
+
+/* Album thumbnails */
+.album-thumbnail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 2px;
+  aspect-ratio: 1;
+}
+
+.album-thumbnail-item {
+  overflow: hidden;
+  position: relative;
+}
+
+.grid-item-enter {
+  opacity: 0;
+  transform: scale(0.8);
+}
+
+.grid-item-enter-active {
+  opacity: 1;
+  transform: scale(1);
+  transition: opacity 0.3s, transform 0.3s;
+}
+
+/* Glassmorphism effect */
+.glassmorphism {
+  background: linear-gradient(112deg, rgba(6, 11, 38, 0.94) 59.3%, rgba(26, 31, 55, 0.00) 100%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(59, 130, 246, 0.4);
+}

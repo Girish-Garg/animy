@@ -5,10 +5,11 @@ import SignIn from './pages/SignIn';
 import ForgotPassword from './pages/ForgotPassword';
 import Layout from './pages/SideBar';
 import DashboardPage from './pages/DashboardPage';
-import ProjectsPage from './pages/ProjectsPage';
+import ProjectsPage from './pages/AlbumsPage';
 import BillingPage from './pages/BillingPage';
-import SettingsPage from './pages/SettingsPage';
 import ProfilePage from './pages/ProfilePage';
+import ChatSideBar from './pages/ChatSideBar';
+
 function AppContent() {
   return (
     <div className="h-screen overflow-hidden">
@@ -23,9 +24,9 @@ function AppContent() {
             <Route path="dashboard" element={<DashboardPage />} />
             <Route path="projects" element={<ProjectsPage />} />
             <Route path="billing" element={<BillingPage />} />
-            <Route path="settings" element={<SettingsPage />} />
             <Route path="profile" element={<ProfilePage />} />
           </Route>
+          <Route path="/chat" element={<ChatSideBar />} />
         </Routes>
       </main>
     </div>

@@ -12,9 +12,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Toaster, toast } from 'sonner';
-import { Loader2Icon } from "lucide-react"
+import { Loader2Icon, LockIcon, MailIcon, LogInIcon } from "lucide-react"
 import googleSvg from "@/assets/google-logo.svg";
-import DotGrid from '@/block/Backgrounds/DotGrid/DotGrid';
 
 export default function SignIn() {
   const { signIn, isLoaded, setActive } = useSignIn();
@@ -28,7 +27,7 @@ export default function SignIn() {
   const { signOut } = useClerk();
 
   useEffect(() => {
-    signOut(); // 🚨 Only use this in dev/testing to force logout
+    signOut(); // remove karna hai baadme //
   }, []);
 
   useEffect(() => {
@@ -82,72 +81,77 @@ export default function SignIn() {
         redirectUrlComplete: "/dashboard"
       });
     } catch (err) {
-      toast.error(err.errors ? err.errors[0].longMessage : 'An error occurred with Google sign in.');
-      return;
+      toast.error(err.errors ? err.errors[0].longMessage : 'An error occurred with Google sign in.');      return;
     }
-  }  
+  }
   
   return (    
-    <div className="overflow-hidden flex relative items-center justify-center min-h-screen bg-gradient-to-br from-gray-50 via-gray-100 to-gray-200 bg-opacity-90 px-4 py-8 sm:px-6 md:py-12">      
-      <div className="absolute inset-0 z-0 h-full w-full animate-gradient-slow">
-        <DotGrid className="h-full w-full" 
-        dotSize={3}             
-        gap={24}
-        baseColor="#E5E7EB"
-        activeColor="#4B5563"
-        proximity={120}
-        shockRadius={200}
-        shockStrength={2.5}
-        resistance={900}        
-        returnDuration={1.8}/>
-      </div>
-      <Toaster richColors position="top-center" expand={false} />
-      <div className="relative z-10 w-full max-w-md">
-        <Card className="relative w-full shadow-xl z-10 bg-white/90 backdrop-blur-md border border-gray-200 overflow-hidden rounded-xl ring-1 ring-gray-50 transition-all hover:shadow-gray-200/50">        
-          <CardHeader className="px-5 sm:px-6 pt-8 pb-4 bg-gradient-to-b from-white to-gray-50/30">
-            <CardTitle className="text-xl sm:text-2xl font-bold text-center text-gray-900">Sign in to your account</CardTitle>
+    <div className="overflow-hidden flex relative items-center justify-center min-h-screen px-4 py-8 sm:px-6 md:py-12">
+      <img src="/WholeBg.png" alt="" className="absolute inset-0 w-full h-full object-cover z-0" />
+        
+      <div className="absolute inset-0 bg-black/60 z-10" />
+      
+      <Toaster richColors position="top-center" expand={false} />      
+      <div className="relative z-20 w-full max-w-md">
+        <Card className="relative w-full shadow-2xl overflow-hidden rounded-xl border border-blue-900/20 hover:border-blue-700/30 transition-all backdrop-blur-3xl"
+              style={{background: 'linear-gradient(112deg, rgba(6, 11, 38, 0.94) 59.3%, rgba(26, 31, 55, 0.00) 100%)'}}>          
+          <CardHeader className="px-5 sm:px-8 pt-8 pb-4 border-b border-blue-900/20">
+            <CardTitle className="text-2xl sm:text-3xl font-bold text-center text-white">Welcome back</CardTitle>
+            <p className="text-center text-gray-300 mt-2 text-sm">Sign in to continue to your dashboard</p>
           </CardHeader>
-          <CardContent className="px-5 sm:px-6">
+          
+          <CardContent className="px-5 sm:px-8 pt-6">
             <form onSubmit={handleSignInSubmit}>
-              <div className="flex flex-col gap-7">
+              <div className="flex flex-col gap-5 sm:gap-6">
                 <div className="grid gap-2 sm:gap-3">
-                  <Label htmlFor="email" className="text-sm sm:text-base font-medium text-gray-700">Email</Label>                
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="your@email.com"
-                    value={emailAddress}
-                    onChange={(e) => setEmailAddress(e.target.value)}
-                    className="h-10 sm:h-12 text-sm sm:text-base px-3 sm:px-4 bg-white/80 focus:bg-white hover:bg-gradient-to-r hover:from-white/90 hover:to-white transition-all rounded-md"
-                    required
-                  />
+                  <Label htmlFor="email" className="text-sm sm:text-base font-medium text-blue-100">Email</Label>                
+                  <div className="relative">
+                    <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-blue-300">
+                      <MailIcon size={18} />
+                    </div>                    
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="your@email.com"
+                      value={emailAddress}
+                      onChange={(e) => setEmailAddress(e.target.value)}
+                      className="h-12 text-sm sm:text-base pl-10 pr-4 bg-[#131631] border-blue-900/30 text-white placeholder:text-blue-300/50 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50 transition-all rounded-xl"
+                      required
+                    />
+                  </div>
                 </div>       
                 <div className="grid gap-2 sm:gap-3">
                   <div className="flex items-center justify-between">
-                    <Label htmlFor="password" className="text-sm sm:text-base font-medium text-gray-700">Password</Label>                  <Link to="/forgot-password" className="text-xs sm:text-sm text-gray-600 hover:text-gray-900 hover:underline transition-colors">
+                    <Label htmlFor="password" className="text-sm sm:text-base font-medium text-blue-100">Password</Label>
+                    <Link to="/forgot-password" className="text-xs sm:text-sm text-blue-300 hover:text-blue-100 hover:underline transition-colors">
                       Forgot password?
                     </Link>
                   </div>             
-                  <Input
-                    id="password"
-                    type="password"
-                    placeholder="•••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="h-10 sm:h-12 text-sm sm:text-base px-3 sm:px-4 bg-white/80 focus:bg-white hover:bg-gradient-to-r hover:from-white/90 hover:to-white transition-all rounded-md"
-                    required
-                  />
+                  <div className="relative">
+                    <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-blue-300">
+                      <LockIcon size={18} />
+                    </div>                    
+                    <Input
+                      id="password"
+                      type="password"
+                      placeholder="•••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="h-12 text-sm sm:text-base pl-10 pr-4 bg-[#131631] border-blue-900/30 text-white placeholder:text-blue-300/50 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50 transition-all rounded-xl"
+                      required
+                    />
+                  </div>
                 </div>
               </div>
-              <div className="mt-6 sm:mt-8">              
+              <div className="mt-7 sm:mt-8">                
                 <Button
                   type="submit"
-                  className="w-full hover:cursor-pointer h-10 sm:h-12 text-sm sm:text-base bg-gray-800 hover:bg-black transition-all shadow-md hover:shadow-lg hover:shadow-gray-200/50 transform hover:-translate-y-0.5 active:translate-y-0"
+                  className="w-full hover:cursor-pointer h-12 text-base bg-blue-600 hover:bg-blue-700 text-white transition-all shadow-lg shadow-blue-900/30 hover:shadow-blue-800/40 transform hover:scale-[1.02] active:scale-[0.99] rounded-xl"
                   disabled={isLoading}
                 >
                   {isLoading ? (
                     <>
-                      <Loader2Icon className="h-4 w-4 sm:h-5 sm:w-5 animate-spin mr-2" />
+                      <Loader2Icon className="h-5 w-5 animate-spin mr-2" />
                       Please wait
                     </>
                   ) : "Sign In"}
@@ -155,29 +159,31 @@ export default function SignIn() {
               </div>
             </form>
           </CardContent>
-          <CardFooter className="flex-col gap-3 sm:gap-4 px-5 sm:px-6 bg-gradient-to-b from-white/5 to-gray-50/20">
-            <div className="relative w-full">            
+          
+          <CardFooter className="flex-col gap-4 px-5 sm:px-8 pb-8 pt-4">            
+            <div className="relative w-full my-2">            
               <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t border-gray-200 shadow-sm"></span>
+                <span className="w-full border-t border-blue-900/30"></span>
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-white px-3 py-0.5 text-gray-500 font-medium tracking-wider rounded-full shadow-sm">Or continue with</span>
+                <span className="px-3 py-0.5 text-blue-300 font-medium tracking-wider rounded-full bg-[#131631]">Or continue with</span>
               </div>
-            </div>        
-            <Button
+            </div>
+              <Button
               variant="outline"
-              className="w-full hover:cursor-pointer h-10 sm:h-12 text-sm sm:text-base flex items-center justify-center gap-2 border-gray-300 hover:bg-gray-100 transition-all shadow-sm hover:shadow-md transform hover:-translate-y-0.5 active:translate-y-0 text-gray-700"
+              className="w-full hover:cursor-pointer h-12 text-base flex items-center justify-center gap-3 bg-[#131631] border-blue-900/30 hover:bg-[#1a1f37]/40 transition-all text-white hover:text-white rounded-xl transform hover:scale-[1.02] active:scale-[0.99]"
               onClick={handleGoogleLogin}
               disabled={isLoading}
               type="button"
             >
-              <img src={googleSvg} alt="Google" className='size-4 sm:size-5'/>
+              <img src={googleSvg} alt="Google" className='size-5'/>
               Sign in with Google
             </Button>
-            <div className="text-center mt-4 sm:mt-6">
-              <p className="text-sm sm:text-base text-gray-600">
+            
+            <div className="text-center mt-6">
+              <p className="text-sm sm:text-base text-blue-200/80">
                 Don't have an account?{" "}              
-                <Link to="/signup" className="text-gray-600 hover:text-gray-900 font-medium hover:underline transition-colors">
+                <Link to="/signup" className="text-blue-400 hover:text-blue-300 font-medium hover:underline transition-colors">
                   Sign up
                 </Link>
               </p>

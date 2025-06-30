@@ -12,7 +12,18 @@ import {
   SidebarTrigger,
   SidebarGroupLabel,
   SidebarInset,
+  useSidebar,
 } from "@/components/ui/sidebar";
+import AlbumOverlay from '../components/AlbumOverlay';
+import { generateMockAlbumData } from '../lib/albumUtils';
+import {
+  Breadcrumb,
+  BreadcrumbList,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 import { 
   HomeIcon, 
   Disc,
@@ -20,12 +31,33 @@ import {
   SettingsIcon, 
   UserIcon,
   HelpCircleIcon,
+  SlashIcon,
+  NotebookIcon,
+  BellIcon,
+  PanelLeft,
+  Folder,
 } from "lucide-react";
+
+function CustomTrigger() {
+  const { toggleSidebar } = useSidebar();
+  
+  return (
+    <button 
+      onClick={toggleSidebar} 
+      className="group hover:cursor-pointer p-2 hover:bg-[#1A1F37]/40 rounded-lg transition-all duration-100"
+    >
+      <PanelLeft className="size-[18px] text-[#a0aec0] group-hover:text-white transition-colors" />
+      <span className="sr-only">Toggle Sidebar</span>
+    </button>
+  );
+}
 
 export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [activePage, setActivePage] = useState('dashboard');
+  const [albumOverlayOpen, setAlbumOverlayOpen] = useState(false);
+  const [selectedAlbum, setSelectedAlbum] = useState(null);
   
   // Extract the current path without leading slash
   useEffect(() => {
@@ -35,15 +67,15 @@ export default function Layout() {
   
   const navItems = [
     { key: 'dashboard', label: 'Dashboard', icon: HomeIcon },
-    { key: 'projects', label: 'Projects', icon: Disc },
+    { key: 'album', label: 'Albums', icon: Folder },
     { key: 'billing', label: 'Billing', icon: CreditCardIcon },
-    { key: 'settings', label: 'Settings', icon: SettingsIcon },
+    { key: 'profile', label: 'Profile', icon: UserIcon }
   ];
   
   const accountItems = [
-    { key: 'profile', label: 'Profile', icon: UserIcon },
+    
   ];
-    const renderMenuItem = (item) => {
+  const renderMenuItem = (item) => {
     const { key, label, icon: Icon } = item;
     const isActive = activePage === key;
     
@@ -60,7 +92,24 @@ export default function Layout() {
             }
           `}
           onClick={() => {
-            navigate(`/${key}`);
+            if (key === 'album') {
+              // For albums, open the overlay instead of navigating
+              // Generate mock albums for development
+              const mockAlbums = Array(6).fill().map((_, i) => ({
+                id: `album-${i}`,
+                albumName: `Album ${i + 1}`,
+                coverImage: '',
+                videos: generateMockAlbumData(Math.floor(Math.random() * 6) + 2).videos,
+              }));
+              
+              setSelectedAlbum({
+                albums: mockAlbums
+              });
+              setAlbumOverlayOpen(true);
+            } else {
+              // For other items, navigate as usual
+              navigate(`/${key}`);
+            }
             setActivePage(key);
           }}
         >
@@ -98,32 +147,12 @@ export default function Layout() {
         <SidebarProvider defaultOpen={true}>
             <Sidebar variant="sidebar" className="w-72 flex-shrink-0 backdrop-blur-[3.125vw] shadow-xl !border-0"
             style={{background: 'linear-gradient(112deg, rgba(6, 11, 38, 0.94) 59.3%, rgba(26, 31, 55, 0.00) 100%);'}}>          
-                <SidebarHeader className="flex w-full items-start justify-baseline py-4 px-3 border-b border-blue-900/20">                    
-                <div className="flex items-center space-x-5 py-2 pl-4">
-                        <div className="relative">
-                            <div className="absolute inset-0 bg-blue-500/20 rounded-full blur-md hover:bg-blue-500/30 transition-all duration-300"></div>
-                            <img 
-                                src='/Favicon.svg' 
-                                alt="Logo" 
-                                className="h-11 w-11 -rotate-90 relative z-10 scale-150" 
-                            />
-                        </div>
-                        <div>
-                            <span className="text-2xl font-bold bg-gradient-to-r from-white to-blue-300 bg-clip-text text-transparent tracking-wide select-none">AnimY</span>
-                            <div className="text-xs text-blue-400/80 select-none">Animation Platform</div>
-                        </div>
-                    </div>
+                <SidebarHeader className="flex-row items-center justify-between w-full h-16 px-3 border-b border-blue-900/20 ">
+                  <img src="/final.png" alt="Logo" className="w-16" />
                 </SidebarHeader>
                 <SidebarContent className="px-3 overflow-hidden">                    
                     <SidebarMenu className="space-y-1">
                         {navItems.map(renderMenuItem)}
-                    </SidebarMenu>
-                    
-                    <SidebarGroupLabel className="text-gray-400 px-2 pb-2 font-medium tracking-wide text-xs">
-                        ACCOUNT PAGES
-                    </SidebarGroupLabel>
-                      <SidebarMenu className="space-y-1">
-                        {accountItems.map(renderMenuItem)}
                     </SidebarMenu>
                 </SidebarContent>
                 <SidebarFooter className="mt-auto px-4">                    
@@ -158,13 +187,35 @@ export default function Layout() {
                     </div>
                 </SidebarFooter>
             </Sidebar>        
-            <SidebarInset className="flex-1 p-6 bg-transparent text-white overflow-y-auto overflow-x-hidden min-w-0 relative z-10">          
-            <div className="flex justify-between items-baseline mb-8">
-              <SidebarTrigger className="mr-4 hover:cursor-pointer p-2 rounded-lg transition-colors duration-200" />
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-white to-blue-200 bg-clip-text text-transparent">{activePage.charAt(0).toUpperCase() + activePage.slice(1)}</h1>
-              <div className="flex-1"></div>
-            </div>
-            <Outlet />
+            <SidebarInset className="flex-1 p-6 bg-transparent text-white overflow-y-auto overflow-x-hidden min-w-0 relative z-10">
+              <div className='flex items-center justify-between'>                
+                <div className="flex items-center gap-2">
+                  <CustomTrigger />
+                  <Breadcrumb>
+                    <BreadcrumbList>
+                      <BreadcrumbItem>
+                        <BreadcrumbLink href="/" className="text-[#a0aec0] text-xl font-normal hover:text-white">AnimY</BreadcrumbLink>
+                      </BreadcrumbItem>
+                      <BreadcrumbSeparator/>
+                      <BreadcrumbItem>
+                        <BreadcrumbPage className="text-white text-xl font-medium">{activePage.charAt(0).toUpperCase() + activePage.slice(1)}</BreadcrumbPage>
+                      </BreadcrumbItem>
+                    </BreadcrumbList>
+                  </Breadcrumb>
+                </div>
+                <BellIcon className='size-5 text-[#a0aec0] hover:text-white transition-colors hover:cursor-pointer'/>
+              </div>            
+              <Outlet />
+              {/* Album Overlay */}
+            <AlbumOverlay 
+              isOpen={albumOverlayOpen}
+              onClose={() => {
+                setAlbumOverlayOpen(false);
+                setActivePage('dashboard');
+                navigate('/dashboard');
+              }} 
+              albumData={selectedAlbum}
+            />
         </SidebarInset>
       </SidebarProvider>
     </div>
