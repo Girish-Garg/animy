@@ -61,11 +61,10 @@ export default function DashboardPage() {
   };
   
   return (
-    <div className="pt-4 flex flex-col h-full" style={{ height: 'calc(100vh - 80px)' }}>
+    <div className="pt-4 flex flex-col h-full lg:overflow-hidden" style={{ height: 'calc(100vh - 80px)' }}>
       <div 
-        className="w-full mb-2 relative overflow-hidden rounded-xl shadow-lg border border-blue-900/20 hover:border-blue-700/30 transition-all duration-300" 
-        style={{ 
-          height: '12%',
+        className="w-full hidden lg:block lg:h-[12%] mb-2 relative overflow-hidden rounded-xl shadow-lg border border-blue-900/20 hover:border-blue-700/30 transition-all duration-300" 
+        style={{
           backgroundImage: 'url(/topCardBg.png)',
           backgroundSize: 'cover',
           backgroundPosition: 'center',
@@ -75,7 +74,7 @@ export default function DashboardPage() {
         <div className="absolute inset-0 bg-black/30"></div>
         <div className="relative z-10 p-4 flex items-center h-full">
           <div className="flex items-center gap-4 w-full">
-            <div className="h-16 w-16 rounded-2xl bg-blue-600 overflow-hidden border-2 border-blue-400 flex-shrink-0">
+            <div className="h-14 w-14 rounded-2xl bg-blue-600 overflow-hidden border-2 border-blue-400 flex-shrink-0">
               <img 
                 src={user?.imageUrl} 
                 alt="Profile" 
@@ -92,11 +91,10 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
-      
-      <div className="flex flex-col lg:flex-row gap-4 mb-2" style={{ height: '40%' }}>
-        
+
+      <div className="flex flex-col lg:flex-row gap-4 mb-2 lg:h-[40%]">
         <div 
-          className="w-full lg:w-[40%] p-6 rounded-xl shadow-lg border border-blue-900/20 hover:border-blue-700/30 transition-all duration-300 h-full overflow-hidden relative"
+          className="w-full min-h-[250px] lg:min-h-0 lg:w-[40%] p-6 rounded-xl shadow-lg border border-blue-900/20 hover:border-blue-700/30 transition-all duration-300 h-full overflow-hidden relative"
           style={{
             backgroundImage: 'url(/jellyfish.png)',
             backgroundSize: 'cover',
@@ -119,22 +117,36 @@ export default function DashboardPage() {
             </a>
           </div>
         </div>
-        
-        <div className="w-full lg:w-2/3 p-6 bg-[#001138]/50 rounded-xl shadow-lg h-full overflow-hidden backdrop-blur-3xl border border-blue-900/20 hover:border-blue-700/30 transition-all duration-300">
+
+        <div className="w-full min-h-[300px] lg:min-h-0 lg:w-2/3 p-6 bg-[#001138]/50 rounded-xl shadow-lg h-full overflow-hidden backdrop-blur-3xl border border-blue-900/20 hover:border-blue-700/30 transition-all duration-300">
+          
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center">
+              <div className="z-30 text-3xl md:text-5xl font-bold mb-4 bg-gradient-to-r from-blue-400 to-purple-600 bg-clip-text text-transparent pb-2">
+                Coming Soon
+              </div>
+              <p className="text-gray-500 text-sm md:text-base">
+                Track your usage and manage credits efficiently
+              </p>
+            </div>
+          </div>
+
+          {/* Future Credits Implementation */}
+          {/* 
           <h2 className="text-xl font-medium mb-6">Credits Overview</h2>
-          <div className="flex h-[80%] flex-col md:flex-row gap-6 items-center justify-between">
-            <div className="w-full h-full md:w-1/3 flex flex-col justify-between">
+          <div className="flex h-[80%] flex-row gap-6 items-center justify-between">
+            <div className="w-full h-full flex flex-col justify-between">
               <div className="p-4 border border-blue-900/40 rounded-md bg-[#0c1d43]/60 backdrop-blur-3xl hover:border-blue-800/60 transition-all">
                 <div className="text-sm text-gray-400">Remaining Credits</div>
-                <div className="text-2xl font-bold text-white">1,000</div>
+                <div className="text-xl font-bold text-white">1,000</div>
               </div>
               <div className="p-4 border border-blue-900/40 rounded-md bg-[#0c1d43]/60 backdrop-blur-3xl hover:border-blue-800/60 transition-all">
                 <div className="text-sm text-gray-400">Used Credits</div>
-                <div className="text-2xl font-bold text-white">9,000</div>
+                <div className="text-xl font-bold text-white">9,000</div>
               </div>
             </div>
             
-            <div className="w-full md:w-1/3 flex flex-col items-center">
+            <div className="w-full hidden md:flex flex-col items-center">
               <div className="w-40 h-40 relative">
                 <CircularProgressbar 
                   value={percentage} 
@@ -153,22 +165,22 @@ export default function DashboardPage() {
               </div>
             </div>
             
-            <div className="w-full h-full md:w-1/3 flex flex-col justify-between">
+            <div className="w-full h-full flex flex-col justify-between">
               <div className="p-4 border border-blue-900/40 rounded-md bg-[#0c1d43]/60 backdrop-blur-3xl hover:border-blue-800/60 transition-all">
                 <div className="text-sm text-gray-400">Cost Per Credit</div>
-                <div className="text-2xl font-bold text-white">$1</div>
+                <div className="text-xl font-bold text-white">$1</div>
               </div>
               <div className="p-4 border border-blue-900/40 rounded-md bg-[#0c1d43]/60 backdrop-blur-3xl hover:border-blue-800/60 transition-all">
                 <div className="text-sm text-gray-400">Total Cost</div>
-                <div className="text-2xl font-bold text-white">$10,000</div>
+                <div className="text-xl font-bold text-white">$10,000</div>
               </div>
             </div>
-          </div>
+          </div> */}
         </div>
       </div>
 
-      <div className="flex flex-col lg:flex-row gap-4 flex-grow" style={{ height: '50%' }}>
-        <div className="w-full lg:w-1/3 p-6 bg-[#001138]/50 rounded-xl shadow-lg border border-blue-900/20 hover:border-blue-700/30 transition-all duration-300 h-full flex flex-col backdrop-blur-3xl">
+      <div className="flex flex-col lg:flex-row gap-4 flex-grow lg:h-1/2">
+        <div className="w-full min-h-[200px] lg:min-h-0 lg:w-1/3 p-6 bg-[#001138]/50 rounded-xl shadow-lg border border-blue-900/20 hover:border-blue-700/30 transition-all duration-300 h-full flex flex-col backdrop-blur-3xl">
           <h2 className="text-xl font-medium mb-1">Quick Launch</h2>
           <div className="flex items-center gap-2 text-sm text-gray-400 mb-2">
             <span className="w-2 h-2 bg-green-400 rounded-full"></span>
@@ -193,7 +205,7 @@ export default function DashboardPage() {
             </button>
           </form>
         </div>
-        <div className="w-full lg:w-1/3 p-6 bg-[#001138]/50 rounded-xl shadow-lg border border-blue-900/20 hover:border-blue-700/30 transition-all duration-300 h-full flex flex-col backdrop-blur-3xl">
+        <div className="w-full min-h-[300px] lg:min-h-0 lg:w-1/3 p-6 bg-[#001138]/50 rounded-xl shadow-lg border border-blue-900/20 hover:border-blue-700/30 transition-all duration-300 h-full flex flex-col backdrop-blur-3xl">
           <div className="flex justify-between items-center mb-1">
             <h2 className="text-xl font-medium">Recent Albums</h2>            
             <button 
@@ -240,7 +252,8 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="w-full lg:w-1/3 p-6 bg-[#001138]/50 rounded-xl shadow-lg border border-blue-900/20 hover:border-blue-700/30 transition-all duration-300 h-full flex flex-col backdrop-blur-3xl">          <div className="flex justify-between items-center mb-1">
+        <div className="w-full mb-4 lg:mb-0 min-h-[300px] lg:min-h-0 lg:w-1/3 p-6 bg-[#001138]/50 rounded-xl shadow-lg border border-blue-900/20 hover:border-blue-700/30 transition-all duration-300 h-full flex flex-col backdrop-blur-3xl">          
+          <div className="flex justify-between items-center mb-1">
             <h2 className="text-xl font-medium">Recent Chats</h2>
             <a href="/chat" className="text-sm text-blue-400 hover:text-blue-500 hover:cursor-pointer flex items-center gap-1 group transition-colors">
               <span>View All</span>
@@ -256,7 +269,7 @@ export default function DashboardPage() {
             <div className="text-center p-6">
               <p className="text-gray-300 mb-2">Hey dude! It's empty!</p>
               <p className="text-gray-400 text-sm mb-4">Fill it up with your creative ideas</p>
-              <a href="/chat" className="bg-blue-600/50 hover:bg-blue-600/70 text-white px-4 py-2 rounded-md transition-colors text-sm flex items-center gap-2 mx-auto hover:cursor-pointer">
+              <a href="/chat" className="bg-blue-600/50 hover:bg-blue-600/70 text-white px-4 py-2 rounded-md transition-colors text-sm flex items-center gap-2 mx-auto hover:cursor-pointer w-fit">
                 <span>Start a chat</span>
                 <ArrowRight size={14} />
               </a>

@@ -39,7 +39,20 @@ import {
   MessageSquarePlus,
   MessageCircle,
   SendIcon,
+  EllipsisVerticalIcon,
+  Trash2Icon,
+  EllipsisIcon,
+  Edit3,
 } from "lucide-react";
+
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 function CustomTrigger() {
   const { toggleSidebar } = useSidebar();
@@ -62,6 +75,11 @@ export default function Layout() {
   const [albumOverlayOpen, setAlbumOverlayOpen] = useState(false);  const [selectedAlbum, setSelectedAlbum] = useState(null);
   const [activeChat, setActiveChat] = useState(null);
   const [inputValue, setInputValue] = useState('');
+  const [hoveredChatId, setHoveredChatId] = useState(null);
+  const [openDropdownId, setOpenDropdownId] = useState(null);
+  const [editingChatId, setEditingChatId] = useState(null);
+  const [editingChatName, setEditingChatName] = useState('');
+  const [blurEnabled, setBlurEnabled] = useState(true);
   
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -111,7 +129,8 @@ const renderMenuItem = (item) => {
               ? "!bg-[#1A1F37] shadow-md" 
               : "hover:bg-[#1A1F37]/40 hover:shadow-md hover:translate-x-1"
             }
-          `}          onClick={() => {
+          `}          
+          onClick={() => {
             if (key === 'album') {
               const mockAlbums = Array(6).fill().map((_, i) => ({
                 id: `album-${i}`,
@@ -176,32 +195,154 @@ const renderMenuItem = (item) => {
     setActiveChat(newChat.id);
     setActivePage('chat');
     localStorage.setItem('animy_last_chat', newChat.id);  };
+
+  const handleChatRename = (chat) => {
+    setEditingChatId(chat.id);
+    setEditingChatName(chat.title);
+    setOpenDropdownId(null);
+    setBlurEnabled(false); // Disable blur temporarily
+    
+    // Focus the input after state update and re-enable blur after a delay
+    setTimeout(() => {
+      const input = document.querySelector(`input[data-chat-id="${chat.id}"]`);
+      if (input) {
+        input.focus();
+        input.select();
+        // Re-enable blur after input is focused and stable
+        setTimeout(() => setBlurEnabled(true), 200);
+      }
+    }, 0);
+  };
+
+  const handleSaveChatName = (chatId) => {
+    if (editingChatName.trim()) {
+      console.log('Save chat name:', editingChatName, 'for chat:', chatId);
+      // Update the chat name in the chatItems array
+      setChatItems(prevChatItems => 
+        prevChatItems.map(chat => 
+          chat.id === chatId 
+            ? { ...chat, title: editingChatName.trim() }
+            : chat
+        )
+      );
+    }
+    setEditingChatId(null);
+    setEditingChatName('');
+    setBlurEnabled(true);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingChatId(null);
+    setEditingChatName('');
+    setBlurEnabled(true);
+  };
+
+  const handleChatDelete = (chat) => {
+    console.log('Delete chat:', chat.title);
+    setChatItems(prevChatItems => prevChatItems.filter(item => item.id !== chat.id));
+    
+    // If we're deleting the active chat, clear the active chat
+    if (activeChat === chat.id) {
+      setActiveChat(null);
+      setActivePage('dashboard');
+      localStorage.removeItem('animy_last_chat');
+    }
+    setOpenDropdownId(null);
+  };
   
   const renderChatItem = (chat) => {
     const isActive = activeChat === chat.id;
+    const isHovered = hoveredChatId === chat.id;
+    const isDropdownOpen = openDropdownId === chat.id;
     
     return (
       <SidebarMenuItem key={chat.id} className="my-0.5">
         <SidebarMenuButton
           isActive={isActive}
           className={`
-            w-full py-3 px-3 flex items-center rounded-lg transition-all duration-100 hover:cursor-pointer
+            w-full py-3 px-3 flex items-center justify-between rounded-lg transition-all duration-100 hover:cursor-pointer
             ${isActive 
-              ? "!bg-[#1A1F37] shadow-md" 
-              : "hover:bg-[#1A1F37]/40 hover:shadow-sm hover:translate-x-1"
+              ? "!bg-[#1A1F37] shadow-md hover:!bg-[#1A1F37]/80"
+              : "hover:bg-[#1A1F37]/40"
             }
           `}
           onClick={() => handleChatClick(chat.id)}
+          onMouseEnter={() => setHoveredChatId(chat.id)}
+          onMouseLeave={() => setHoveredChatId(null)}
         >
-          <span className={`
-            font-medium transition-all duration-100 truncate
-            ${isActive 
-              ? 'text-white' 
-              : 'text-gray-300'
-            }
-          `}>
-            {chat.title}
-          </span>
+          <div className="flex-1 min-w-0">
+            {editingChatId === chat.id ? (
+              <input
+                type="text"
+                value={editingChatName}
+                onChange={(e) => setEditingChatName(e.target.value)}
+                onBlur={() => {
+                  if (blurEnabled) {
+                    handleSaveChatName(chat.id);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleSaveChatName(chat.id);
+                  } else if (e.key === 'Escape') {
+                    handleCancelEdit();
+                  }
+                }}
+                className={`font-medium transition-all duration-100 bg-blue-900/30 border border-blue-400 rounded px-2 w-full focus:outline-none focus:border-blue-300 focus:bg-blue-900/40 relative z-[70] ${
+                  isActive 
+                    ? 'text-white' 
+                    : 'text-gray-300'
+                }`}
+                data-chat-id={chat.id}
+                autoFocus
+                onClick={(e) => e.stopPropagation()}
+              />
+            ) : (
+              <span className={`
+                font-medium transition-all duration-100 truncate
+                ${isActive 
+                  ? 'text-white' 
+                  : 'text-gray-300'
+                }
+              `}>
+                {chat.title}
+              </span>
+            )}
+          </div>
+          <DropdownMenu onOpenChange={(open) => setOpenDropdownId(open ? chat.id : null)}>
+            <DropdownMenuTrigger asChild>
+              <button 
+                className={`group transition-opacity duration-200 hover:cursor-pointer ${
+                  isHovered || isDropdownOpen ? 'opacity-100' : 'opacity-0'
+                }`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <EllipsisIcon className='text-gray-300 group-hover:text-white transition-colors' size={16}/>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              className="bg-[#1A1F37] border-blue-900/30 shadow-lg min-w-[200px] w-fit"
+            >
+              <DropdownMenuItem 
+                className='group text-gray-300 hover:!text-white hover:!bg-blue-900/30 cursor-pointer'
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleChatRename(chat);
+                }}
+              >
+                <Edit3 className="mr-2 h-4 w-4 text-gray-300 group-hover:!text-white" />
+                Rename
+              </DropdownMenuItem>
+              <DropdownMenuItem className='text-red-400 hover:!text-red-400 hover:!bg-red-900/30 cursor-pointer'
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleChatDelete(chat);
+                }}
+              >
+                <Trash2Icon className="mr-2 h-4 w-4 text-red-400"/>Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </SidebarMenuButton>
       </SidebarMenuItem>
     );
@@ -273,7 +414,7 @@ const renderMenuItem = (item) => {
                   <Breadcrumb>
                     <BreadcrumbList>
                       <BreadcrumbItem>
-                        <BreadcrumbLink href="/" className="text-[#a0aec0] text-xl font-normal hover:text-white">AnimY</BreadcrumbLink>
+                        <BreadcrumbLink className="text-[#a0aec0] text-xl font-normal hover:text-[#a0aec0]">AnimY</BreadcrumbLink>
                       </BreadcrumbItem>
                       <BreadcrumbSeparator/>
                       <BreadcrumbItem>
@@ -292,15 +433,14 @@ const renderMenuItem = (item) => {
               </div>
               <div className="mt-6">
                 {activeChat ? (                  
-                    <div className="p-6 h-[calc(100vh-140px)]">
-                    
-                    <div className="h-[calc(100%-140px)] overflow-y-auto mb-4">
+                  <div className="flex flex-col h-[calc(100vh-140px)] px-6">
+                    <div className="flex-1 overflow-y-auto mb-4">
                       <div className="flex flex-col items-center justify-center h-full text-center">
                         <p className="text-gray-300">Your conversation will appear here</p>
                       </div>
                     </div>
-                      <div className="mt-auto">
-                      <form onSubmit={handleSubmit} className="relative flex-grow flex flex-col justify-center">
+                    <div className="flex-shrink-0">
+                      <form onSubmit={handleSubmit} className="relative">
                         <input
                           type="text"
                           value={inputValue}
@@ -321,11 +461,11 @@ const renderMenuItem = (item) => {
                     </div>
                   </div>
                 ) : (                  
-                <div className="flex flex-col items-center justify-center h-[calc(100vh-140px)] p-6 bg-[#000C29]/80 rounded-xl shadow-lg border border-blue-900/20 backdrop-blur-3xl">
+                <div className="flex flex-col items-center justify-center h-[calc(100vh-140px)] px-6">
                     <div className="max-w-2xl w-full flex flex-col items-center">
                       <h2 className="text-3xl font-bold text-white mb-4">What are you waiting for</h2>
                       <p className="text-2xl text-white mb-12">start creating</p>
-                        <form onSubmit={handleSubmit} className="relative flex-grow flex flex-col justify-center w-full">
+                      <form onSubmit={handleSubmit} className="relative flex-grow flex flex-col justify-center w-full">
                         <input
                           type="text"
                           value={inputValue}

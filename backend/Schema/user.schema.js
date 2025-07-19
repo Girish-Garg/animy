@@ -12,18 +12,6 @@ const userSchema = new Schema({
         required: true,
         unique: true,
     },
-    totalCredit : {
-        type: Number,
-        default: 1000,
-    },
-    usedCredit : {
-        type: Number,
-        default: 0,
-    },
-    CostPerCredit : {
-        type : Number,
-        default : 5,
-    },
     chatIds : [{
         type: Schema.Types.ObjectId,
         ref: "Chat",
@@ -36,11 +24,6 @@ const userSchema = new Schema({
     timestamps: true,
     toJSON: { virtuals: true },
     toObject: { virtuals: true },
-});
-
-
-userSchema.virtual("creditRemaining").get(function () {
-  return this.totalCredit - this.usedCredit;
 });
 
 const User = mongoose.model("User", userSchema);

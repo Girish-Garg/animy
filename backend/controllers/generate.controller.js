@@ -1,124 +1,108 @@
-import Chat from "../schema/chat.schema.js";
+import axios from "axios";
 import Prompt from "../schema/prompt.schema.js";
-import { v4 as uuidv4 } from 'uuid';
-import generateVideoUtil from '../utils/generateVideo.js';
-import uploadToR2 from '../utils/uploadToR2.js';
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
-
-const BUCKET_NAME = process.env.R2_BUCKET_NAME || 'animy-videos';
-const TEMP_DIR = process.env.TEMP_DIR || os.tmpdir();
+import Chat from "../schema/chat.schema.js";
 
 export const generateVideo = async (req, res) => {
-    const socketId = req.body.socketId;
-    
     try {
         const user = req.user;
-        const { prompt } = req.body;
-        const { chatId } = req.params;
+        // Use validated data from the middleware
+        const { chatId } = req.validatedData.params;
+        const { prompt } = req.validatedData.body;
 
-        if (!prompt || !chatId) {
-            return res.status(400).json({ error: "Prompt and chatId are required" });
-        }
-
-        const chat = await Chat.findOne({ _id: chatId, userId: user._id }).populate({
-            path: 'prompts',
-            select: 'prompt createdAt',
-            options: { sort: { createdAt: -1 } }
+        const GenerateResponse = await axios.post(`${process.env.Video_API_BASE_URL}/video/generate`, {
+            prompt,
+            userId: user._id,
+            chatId: chatId,
+            filename : 'video'
         });
-        
-        if (!chat) {
-            return res.status(404).json({ error: "Chat not found" });
+
+        if (!GenerateResponse.data.success) {
+            return res.status(500).json({ success: false, error: 'Failed to generate video' });
         }
 
-        const newPrompt = new Prompt({
+        const newPrompt = await Prompt.create({
             chatId,
             prompt,
+            status: "processing"
         });
-        
-        await newPrompt.save();
-        
-        chat.prompts.push(newPrompt._id);
-        await chat.save();
 
-        const videoId = uuidv4();
-        const filename = `${videoId}.mp4`;
-        const tempFilePath = path.join(TEMP_DIR, filename);
-        
-        const promptHistory = chat.prompts.map(p => p.prompt);
-        
-        res.status(202).json({ 
-            message: "Video generation started", 
-            promptId: newPrompt._id,
-            videoId
+        await Chat.findByIdAndUpdate(chatId, {
+            $push: { prompts: newPrompt },
+            $set: { lastUpdated: new Date() }
         });
-        
-        const onProgress = (progressData) => {
-            if (socketId && req.app.io) {
-                req.app.io.to(socketId).emit('videoProgress', {
-                    videoId,
-                    ...progressData
-                });
-            }
-        };
-        const result = await generateVideoUtil(prompt, tempFilePath, promptHistory, onProgress);
-        
-        if (result.success) {
-            try {
-                const videoUrl = await uploadToR2(result.filePath, BUCKET_NAME);
-                
-                newPrompt.videoUrl = videoUrl;
-                await newPrompt.save();
-                
-                if (socketId && req.app.io) {
-                    req.app.io.to(socketId).emit('videoComplete', {
-                        videoId,
-                        videoUrl,
-                        promptId: newPrompt._id
-                    });
-                }
-                
-                console.log(`Video generation complete: ${videoUrl}`);
-            } catch (uploadError) {
-                console.error("Error uploading video to R2:", uploadError);
-                
-                newPrompt.errorMessage = 'Failed to upload video';
-                await newPrompt.save();
-                
-                if (socketId && req.app.io) {
-                    req.app.io.to(socketId).emit('videoError', {
-                        videoId,
-                        error: 'Failed to upload video'
-                    });
-                }
-                
-                if (fs.existsSync(result.filePath)) {
-                    fs.unlinkSync(result.filePath);
-                }
-            }
-        } else {
-            console.error("Video generation failed:", result.error);
-            
-            newPrompt.errorMessage = result.error || 'Video generation failed';
-            await newPrompt.save();
-            
-            if (socketId && req.app.io) {
-                req.app.io.to(socketId).emit('videoError', {
-                    videoId,
-                    error: result.error || 'Video generation failed'
-                });
-            }
-        }
+
+        return res.status(200).json({
+            success: true,
+            message: 'Video generation started successfully',
+            chatId: chatId,
+            promptId: newPrompt._id
+        });
+
     } catch (error) {
-        console.error("Error in generateVideo controller:", error);
-        
-        if (socketId && req.app.io) {
-            req.app.io.to(socketId).emit('videoError', {
-                error: "Internal server error"
-            });
-        } else {
-            res.status(500).json({ error: "Internal server error" });
-        }
+        console.error('Error in generateVideo controller:', error);
+        return res.status(500).json({ success: false, error: 'Internal Server Error' });
     }
-};
+}
+
+export const getVideoStatus = async (req, res) => {
+    try {
+        const user = req.user;
+        // Use validated data from the middleware
+        const { chatId, promptId } = req.validatedData.params;
+
+        const response = await axios.get(`${process.env.Video_API_BASE_URL}/video/status/${chatId}/${user._id}`);
+
+        if (!response.data.success) {
+            return res.status(500).json({ success: false, error: 'Failed to fetch video status' });
+        }
+
+        if (promptId) {
+            const existingPrompt = await Prompt.findById(promptId);
+            if (!existingPrompt) {
+                return res.status(404).json({ success: false, error: 'Prompt not found' });
+            }
+
+            if (response.data.status == 'failed') {
+                const { message } = response.data;
+                await Prompt.findByIdAndUpdate(existingPrompt._id, {
+                    status: "failed",
+                    errorMessage: message || 'Failed to generate video',
+                });
+                return res.status(500).json({
+                    success: false,
+                    type: 'error',
+                    error: message || 'Failed to generate video', 
+                    status: 'failed' 
+                });
+            }
+            
+            if (response.data.status == 'success') {
+                const video = {
+                    videoPath: response.data.videoUrl,
+                    thumbnailPath: response.data.thumbnailUrl,
+                }
+                await Prompt.findByIdAndUpdate(existingPrompt._id, {
+                    status: "completed",
+                    video: video,
+                });
+                return res.status(200).json({
+                    success: true,
+                    type: 'success', 
+                    message: 'Video generated successfully',
+                    video,
+                    status: 'completed'
+                });
+            }
+        }
+
+        return res.status(200).json({
+            success: true,
+            status: response.data.status,
+            message: response.data.message
+        });
+
+    } catch (error) {
+        console.error('Error in getVideoStatus controller:', error);
+        return res.status(500).json({ type: 'error', error: 'Internal Server Error' });
+    }
+}

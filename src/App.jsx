@@ -1,11 +1,10 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
-import Signup from './pages/SignUp';
-import SSOCallbackPage from './pages/SSOCallback';
-import SignIn from './pages/SignIn';
-import ForgotPassword from './pages/ForgotPassword';
+import Signup from './pages/auth/SignUp';
+import SSOCallbackPage from './pages/auth/SSOCallback';
+import SignIn from './pages/auth/SignIn';
+import ForgotPassword from './pages/auth/ForgotPassword';
 import Layout from './pages/SideBar';
 import DashboardPage from './pages/DashboardPage';
-import ProjectsPage from './pages/AlbumsPage';
 import BillingPage from './pages/BillingPage';
 import ProfilePage from './pages/ProfilePage';
 import ChatSideBar from './pages/ChatSideBar';
@@ -22,7 +21,6 @@ function AppContent() {
           <Route path="/" element={<Layout />}>
             <Route index element={<DashboardPage />} />
             <Route path="dashboard" element={<DashboardPage />} />
-            <Route path="projects" element={<ProjectsPage />} />
             <Route path="billing" element={<BillingPage />} />
             <Route path="profile" element={<ProfilePage />} />
           </Route>

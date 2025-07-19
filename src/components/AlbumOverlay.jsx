@@ -1,7 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { X, ChevronLeft, FolderOpen } from 'lucide-react';
+import { X, ChevronLeft, FolderOpen, MoreVertical, Edit3, Trash2 } from 'lucide-react';
 import gsap from 'gsap';
 import { useNavigate } from 'react-router-dom';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import './AlbumOverlay.css';
 
 const AlbumOverlay = ({ isOpen, onClose, albumData }) => {
@@ -10,6 +16,16 @@ const AlbumOverlay = ({ isOpen, onClose, albumData }) => {
   const navigate = useNavigate();
   const [currentView, setCurrentView] = useState('albums'); // 'albums' or 'videos'
   const [selectedAlbum, setSelectedAlbum] = useState(null);
+  const [hoveredAlbumId, setHoveredAlbumId] = useState(null);
+  const [openDropdownId, setOpenDropdownId] = useState(null);
+  const [hoveredVideoId, setHoveredVideoId] = useState(null);
+  const [openVideoDropdownId, setOpenVideoDropdownId] = useState(null);
+  const [editingAlbumId, setEditingAlbumId] = useState(null);
+  const [editingAlbumName, setEditingAlbumName] = useState('');
+  const [blurEnabled, setBlurEnabled] = useState(true);
+  const [editingVideoId, setEditingVideoId] = useState(null);
+  const [editingVideoName, setEditingVideoName] = useState('');
+  const [videoBlurEnabled, setVideoBlurEnabled] = useState(true);
 
   // Create placeholder albums for demo
   const placeholderAlbums = Array(6).fill().map((_, i) => ({
@@ -142,9 +158,88 @@ const AlbumOverlay = ({ isOpen, onClose, albumData }) => {
     });
   };
 
+  const handleRenameAlbum = (album) => {
+    setEditingAlbumId(album.id);
+    setEditingAlbumName(album.albumName);
+    setOpenDropdownId(null);
+    setBlurEnabled(false); // Disable blur temporarily
+    
+    // Focus the input after state update and re-enable blur after a delay
+    setTimeout(() => {
+      const input = document.querySelector(`input[data-album-id="${album.id}"]`);
+      if (input) {
+        input.focus();
+        input.select();
+        // Re-enable blur after input is focused and stable
+        setTimeout(() => setBlurEnabled(true), 200);
+      }
+    }, 0);
+  };
+
+  const handleSaveAlbumName = (albumId) => {
+    if (editingAlbumName.trim()) {
+      console.log('Save album name:', editingAlbumName, 'for album:', albumId);
+      // Here you would update the album name in your data/API
+      // For now, update the local data
+      const albumIndex = allAlbums.findIndex(album => album.id === albumId);
+      if (albumIndex !== -1) {
+        allAlbums[albumIndex].albumName = editingAlbumName.trim();
+      }
+    }
+    setEditingAlbumId(null);
+    setEditingAlbumName('');
+    setBlurEnabled(true);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingAlbumId(null);
+    setEditingAlbumName('');
+    setBlurEnabled(true);
+  };
+
+  const handleRenameVideo = (video) => {
+    setEditingVideoId(video.id);
+    setEditingVideoName(video.title || `Video ${videos.findIndex(v => v.id === video.id) + 1}`);
+    setOpenVideoDropdownId(null);
+    setVideoBlurEnabled(false); // Disable blur temporarily
+    
+    // Focus the input after state update and re-enable blur after a delay
+    setTimeout(() => {
+      const input = document.querySelector(`input[data-video-id="${video.id}"]`);
+      if (input) {
+        input.focus();
+        input.select();
+        // Re-enable blur after input is focused and stable
+        setTimeout(() => setVideoBlurEnabled(true), 200);
+      }
+    }, 0);
+  };
+
+  const handleSaveVideoName = (videoId) => {
+    if (editingVideoName.trim()) {
+      console.log('Save video name:', editingVideoName, 'for video:', videoId);
+      // Here you would update the video name in your data/API
+      // For now, update the local data
+      const videoIndex = videos.findIndex(video => video.id === videoId);
+      if (videoIndex !== -1) {
+        videos[videoIndex].title = editingVideoName.trim();
+      }
+    }
+    setEditingVideoId(null);
+    setEditingVideoName('');
+    setVideoBlurEnabled(true);
+  };
+
+  const handleCancelVideoEdit = () => {
+    setEditingVideoId(null);
+    setEditingVideoName('');
+    setVideoBlurEnabled(true);
+  };
+
   if (!isOpen) return null;
 
-  return (    <div 
+  return (
+    <div 
       ref={overlayRef}
       className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8 album-overlay-backdrop"
     >
@@ -195,7 +290,8 @@ const AlbumOverlay = ({ isOpen, onClose, albumData }) => {
               <X size={18} />
             </button>
           </div>
-        </div>        {/* Album content */}
+        </div> 
+        {/* Album content */}
         <div className="p-4 sm:p-6">
           {/* Albums View */}
           {currentView === 'albums' && (
@@ -203,54 +299,138 @@ const AlbumOverlay = ({ isOpen, onClose, albumData }) => {
               {allAlbums.map((album, index) => (
                 <div 
                   key={album.id || index}
-                  onClick={() => {
-                    gsap.to(contentRef.current, {
-                      opacity: 0,
-                      y: 20,
-                      duration: 0.3,
-                      onComplete: () => {
-                        setSelectedAlbum(album);
-                        setCurrentView('videos');
-                        gsap.to(contentRef.current, {
-                          opacity: 1,
-                          y: 0,
-                          duration: 0.4
-                        });
-                      }
-                    });
-                  }}
-                  className="album-card relative overflow-hidden rounded-lg border border-blue-900/30 hover:border-blue-400/50 transition-all duration-300 group cursor-pointer"
+                  className="album-card relative overflow-hidden rounded-lg border border-blue-900/30 hover:border-blue-400/50 transition-all duration-300 group"
                   style={{animationDelay: `${index * 0.05}s`}}
+                  onMouseEnter={() => setHoveredAlbumId(album.id)}
+                  onMouseLeave={() => setHoveredAlbumId(null)}
                 >
-                  {/* Album thumbnail grid */}
-                  <div className="aspect-square grid grid-cols-2 grid-rows-2">
-                    {[0, 1, 2, 3].map((i) => (
-                      <div 
-                        key={i} 
-                        className={`relative overflow-hidden ${i === 0 ? 'col-span-2 row-span-2 sm:col-span-1 sm:row-span-1' : ''}`}
-                      >
-                        <div className={`w-full h-full placeholder-${(i + index) % 4 + 1}`}></div>
+                  {/* Album thumbnail */}
+                  <div 
+                    className="aspect-square cursor-pointer relative overflow-hidden"
+                    onClick={() => {
+                      gsap.to(contentRef.current, {
+                        opacity: 0,
+                        y: 20,
+                        duration: 0.3,
+                        onComplete: () => {
+                          setSelectedAlbum(album);
+                          setCurrentView('videos');
+                          gsap.to(contentRef.current, {
+                            opacity: 1,
+                            y: 0,
+                            duration: 0.4
+                          });
+                        }
+                      });
+                    }}
+                  >
+                    {album.videos && album.videos.length > 0 ? (
+                      album.videos[0].path ? (
+                        // Show actual video thumbnail
+                        <video 
+                          className="w-full h-full object-cover"
+                          src={album.videos[0].path}
+                          muted
+                          preload="metadata"
+                        />
+                      ) : (
+                        // Show placeholder for first video
+                        <div className={`w-full h-full placeholder-${(index % 4) + 1}`}></div>
+                      )
+                    ) : (
+                      // Show empty album placeholder
+                      <div className={`w-full h-full placeholder-${(index % 4) + 1} flex items-center justify-center`}>
+                        <div className="text-gray-400 text-sm font-medium">No Videos</div>
                       </div>
-                    ))}
+                    )}
+                    
+                    {/* Hover overlay */}
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <div className="bg-blue-500/80 p-3 rounded-full">
+                        <FolderOpen size={24} className="text-white" />
+                      </div>
+                    </div>
                   </div>
                   
-                  {/* Album info */}
-                  <div className="p-3 bg-[#0c1d43]/80">
-                    <p className="font-medium text-white truncate">
-                      {album.albumName}
-                    </p>
-                    <div className="flex items-center justify-between mt-1">
+                  {/* Album info with dropdown */}
+                  <div className="p-3 bg-[#0c1d43]/80 flex items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      {editingAlbumId === album.id ? (
+                        <input
+                          type="text"
+                          value={editingAlbumName}
+                          onChange={(e) => setEditingAlbumName(e.target.value)}
+                          onBlur={() => {
+                            if (blurEnabled) {
+                              handleSaveAlbumName(album.id);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              handleSaveAlbumName(album.id);
+                            } else if (e.key === 'Escape') {
+                              handleCancelEdit();
+                            }
+                          }}
+                          className="font-medium text-white bg-blue-900/30 border border-blue-400 rounded px-2 w-full focus:outline-none focus:border-blue-300 focus:bg-blue-900/40 relative z-[70]"
+                          data-album-id={album.id}
+                          autoFocus
+                        />
+                      ) : (
+                        <input
+                          type="text"
+                          value={album.albumName}
+                          readOnly
+                          className="font-medium text-white bg-transparent border-none p-0 w-full focus:outline-none cursor-default truncate"
+                        />
+                      )}
                       <span className="text-xs text-gray-300">
                         {album.videos?.length || 0} videos
                       </span>
                     </div>
-                  </div>
-                  
-                  {/* Hover overlay */}
-                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                    <div className="bg-blue-500/80 p-3 rounded-full">
-                      <FolderOpen size={24} className="text-white" />
-                    </div>
+                    
+                    {/* Three-dot menu */}
+                    <DropdownMenu onOpenChange={(open) => setOpenDropdownId(open ? album.id : null)}>
+                      <DropdownMenuTrigger asChild>
+                        <button 
+                          className={`transition-opacity duration-200 p-1 z-50 hover:cursor-pointer ${
+                            hoveredAlbumId === album.id || openDropdownId === album.id ? 'opacity-100' : 'opacity-0'
+                          }`}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                        >
+                          <MoreVertical className='text-gray-400 hover:text-white transition-colors' size={16}/>
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent
+                        align="end"
+                        className="bg-[#1A1F37] border-blue-900/30 shadow-lg min-w-[160px] w-fit z-[60]"
+                        sideOffset={5}
+                      >
+                        <DropdownMenuItem 
+                          className="group text-gray-300 hover:!text-white hover:!bg-blue-900/30 focus:!bg-blue-900/30 focus:!text-white cursor-pointer"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRenameAlbum(album);
+                          }}
+                        >
+                          <Edit3 className="mr-2 h-4 w-4 text-gray-300 group-hover:!text-white" />
+                          Rename
+                        </DropdownMenuItem>
+                        <DropdownMenuItem 
+                          className='text-red-400 hover:!text-red-400 hover:!bg-red-900/30 cursor-pointer'
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            console.log('Delete album:', album.albumName);
+                          }}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4 text-red-400" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </div>
               ))}
@@ -265,6 +445,8 @@ const AlbumOverlay = ({ isOpen, onClose, albumData }) => {
                   key={video.id || index}
                   className="album-card aspect-video relative overflow-hidden rounded-lg border border-blue-900/30 hover:border-blue-400/50 transition-all duration-300 group cursor-pointer"
                   style={{animationDelay: `${index * 0.05}s`}}
+                  onMouseEnter={() => setHoveredVideoId(video.id)}
+                  onMouseLeave={() => setHoveredVideoId(null)}
                 >
                   {video.path ? (
                     <video 
@@ -287,13 +469,77 @@ const AlbumOverlay = ({ isOpen, onClose, albumData }) => {
                   )}
                   
                   {/* Glass overlay on hover */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-4">
-                    <p className="text-sm font-medium text-white truncate mb-1">
-                      {video.title || `Video ${index + 1}`}
-                    </p>
+                  <div className={`absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent transition-opacity flex flex-col justify-end p-4 ${
+                    hoveredVideoId === video.id || openVideoDropdownId === video.id ? 'opacity-100' : 'opacity-0'
+                  }`}>
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-300 opacity-75">00:30</span>
-                      <span className="text-xs bg-blue-500/80 text-white px-2 py-0.5 rounded-full">HD</span>
+                      {editingVideoId === video.id ? (
+                        <input
+                          type="text"
+                          value={editingVideoName}
+                          onChange={(e) => setEditingVideoName(e.target.value)}
+                          onBlur={() => {
+                            if (videoBlurEnabled) {
+                              handleSaveVideoName(video.id);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              handleSaveVideoName(video.id);
+                            } else if (e.key === 'Escape') {
+                              handleCancelVideoEdit();
+                            }
+                          }}
+                          className="text-sm font-medium text-white bg-blue-900/30 border border-blue-400 rounded px-0.5 flex-1 mr-2 focus:outline-none focus:border-blue-300 focus:bg-blue-900/40 relative z-[70]"
+                          data-video-id={video.id}
+                          autoFocus
+                        />
+                      ) : (
+                        <p className="text-sm font-medium text-white truncate flex-1 mr-2">
+                          {video.title || `Video ${index + 1}`}
+                        </p>
+                      )}
+                      <DropdownMenu onOpenChange={(open) => setOpenVideoDropdownId(open ? video.id : null)}>
+                        <DropdownMenuTrigger asChild>
+                          <button 
+                            className={`transition-opacity duration-200 p-1 z-50 hover:cursor-pointer bg-black/50 rounded flex-shrink-0 ${
+                              hoveredVideoId === video.id || openVideoDropdownId === video.id ? 'opacity-100' : 'opacity-0'
+                            }`}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }}
+                          >
+                            <MoreVertical className='text-gray-300 hover:text-white transition-colors' size={12}/>
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                          align="end"
+                          className="bg-[#1A1F37] border-blue-900/30 shadow-lg min-w-[160px] w-fit z-[60]"
+                          sideOffset={5}
+                        >
+                          <DropdownMenuItem 
+                            className="group text-gray-300 hover:!text-white hover:!bg-blue-900/30 focus:!bg-blue-900/30 focus:!text-white cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRenameVideo(video);
+                            }}
+                          >
+                            <Edit3 className="mr-2 h-4 w-4 text-gray-300 group-hover:!text-white" />
+                            Rename
+                          </DropdownMenuItem>
+                          <DropdownMenuItem 
+                            className='text-red-400 hover:!text-red-400 hover:!bg-red-900/30 cursor-pointer'
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              console.log('Delete video:', video.title);
+                            }}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4 text-red-400" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </div>
                 </div>

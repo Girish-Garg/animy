@@ -11,10 +11,17 @@ import { Toaster, toast } from 'sonner';
 export default function ProfilePage() {
   const { user, isLoaded } = useUser();
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [activeTab, setActiveTab] = useState("personal");
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
+  });
+  const [passwordData, setPasswordData] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
   });
 
   React.useEffect(() => {
@@ -29,6 +36,13 @@ export default function ProfilePage() {
   const handleInputChange = (e) => {
     setFormData({
       ...formData,
+      [e.target.name]: e.target.value
+    });
+  };
+
+  const handlePasswordChange = (e) => {
+    setPasswordData({
+      ...passwordData,
       [e.target.name]: e.target.value
     });
   };
@@ -51,6 +65,59 @@ export default function ProfilePage() {
     }
   };
 
+  const handlePasswordSubmit = async (e) => {
+    e.preventDefault();
+    
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      toast.error('New passwords do not match');
+      return;
+    }
+
+    if (passwordData.newPassword.length < 8) {
+      toast.error('New password must be at least 8 characters long');
+      return;
+    }
+
+    setIsChangingPassword(true);
+    
+    try {
+      // For Clerk, we need to use the session's updatePassword method
+      // First, we need to verify the current password
+      await user.updatePassword({
+        newPassword: passwordData.newPassword,
+        currentPassword: passwordData.currentPassword,
+        signOutOfOtherSessions: true
+      });
+      
+      toast.success('Password updated successfully');
+      setPasswordData({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: '',
+      });
+      setShowPasswordForm(false);
+    } catch (error) {
+      console.error('Error updating password:', error);
+      
+      // Handle different Clerk error types
+      if (error.message?.includes('additional verification')) {
+        toast.error('Additional verification required. Please check your email or try again later.');
+      } else if (error.errors?.[0]?.code === 'form_password_incorrect') {
+        toast.error('Current password is incorrect');
+      } else if (error.errors?.[0]?.code === 'form_password_pwned') {
+        toast.error('This password has been compromised. Please choose a different password.');
+      } else if (error.errors?.[0]?.code === 'form_password_too_common') {
+        toast.error('This password is too common. Please choose a more secure password.');
+      } else if (error.errors?.[0]?.code === 'form_password_not_strong_enough') {
+        toast.error('Password is not strong enough. Please include uppercase, lowercase, numbers, and special characters.');
+      } else {
+        toast.error('Failed to update password. Please try again later.');
+      }
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+
   const handleUpdateProfileImage = () => {
     toast.info('Image upload functionality would be implemented here');
   };
@@ -63,7 +130,7 @@ export default function ProfilePage() {
     );
   }
   return (
-    <div className="min-h-screen overflow-hidden relative">
+    <div className="min-h-fit overflow-y-auto relative">
 
       <div className="relative z-20 container mx-auto px-4 py-8">
         <Toaster richColors position="top-center" expand={false} />
@@ -198,13 +265,7 @@ export default function ProfilePage() {
                         Verified
                       </span>
                     </div>
-                  </div>                  
-                  <Button 
-                    className="bg-[#131631] hover:bg-[#1a1f37] text-blue-300 hover:text-blue-200 border border-blue-900/30 hover:border-blue-700/40 transform hover:scale-[1.02] active:scale-[0.98] rounded-xl h-12 transition-all duration-300 shadow-md hover:shadow-blue-900/20 hover:cursor-pointer"
-                    variant="outline"
-                  >
-                    Add another email
-                  </Button>
+                  </div>
                 </div>
               </div>
             </TabsContent>
@@ -212,10 +273,104 @@ export default function ProfilePage() {
             <TabsContent value="security" className="mt-0">
               <div>
                 <h3 className="text-xl font-medium text-white mb-6 border-b border-blue-900/30 pb-2 inline-block">Security</h3>
-                <div className="space-y-6">                  
-                  <Button className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white transition-all duration-300 shadow-lg shadow-blue-900/30 hover:shadow-blue-800/40 transform hover:scale-[1.02] active:scale-[0.98] rounded-xl h-12 border border-blue-500/30 hover:border-blue-400/40 hover:cursor-pointer">
-                    Change password
-                  </Button>
+                <div className="space-y-6">
+                  <div className="p-4 bg-[#131631]/50 rounded-lg border border-blue-900/30">
+                    <div className="flex justify-between items-center mb-4">
+                      <div>
+                        <p className="text-white font-medium">Password</p>
+                        <p className="text-xs text-gray-300 mt-1">Change your account password</p>
+                      </div>
+                      <Button 
+                        onClick={() => setShowPasswordForm(!showPasswordForm)}
+                        className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white transition-all duration-300 shadow-lg shadow-blue-900/30 hover:shadow-blue-800/40 transform hover:scale-[1.02] active:scale-[0.98] rounded-xl h-10 px-4 border border-blue-500/30 hover:border-blue-400/40 hover:cursor-pointer"
+                      >
+                        {showPasswordForm ? 'Cancel' : 'Change Password'}
+                      </Button>
+                    </div>
+                    
+                    {showPasswordForm && (
+                      <form onSubmit={handlePasswordSubmit} className="space-y-4 mt-4 pt-4 border-t border-blue-900/30">
+                        <div className="mb-4 p-3 bg-blue-900/20 rounded-lg border border-blue-800/30">
+                          <p className="text-xs text-blue-200">
+                            <strong>Note:</strong> Changing your password may require additional verification for security. 
+                            You might need to verify your email or re-authenticate.
+                          </p>
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <Label htmlFor="currentPassword" className="text-sm font-medium text-blue-100">Current Password</Label>
+                          <Input
+                            id="currentPassword"
+                            name="currentPassword"
+                            type="password"
+                            value={passwordData.currentPassword}
+                            onChange={handlePasswordChange}
+                            className="h-12 bg-[#131631] border-blue-900/30 text-white placeholder:text-blue-300/50 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all rounded-xl hover:border-blue-700/40 shadow-inner shadow-blue-900/10"
+                            placeholder="Enter current password"
+                            required
+                          />
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <Label htmlFor="newPassword" className="text-sm font-medium text-blue-100">New Password</Label>
+                          <Input
+                            id="newPassword"
+                            name="newPassword"
+                            type="password"
+                            value={passwordData.newPassword}
+                            onChange={handlePasswordChange}
+                            className="h-12 bg-[#131631] border-blue-900/30 text-white placeholder:text-blue-300/50 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all rounded-xl hover:border-blue-700/40 shadow-inner shadow-blue-900/10"
+                            placeholder="Enter new password"
+                            required
+                          />
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <Label htmlFor="confirmPassword" className="text-sm font-medium text-blue-100">Confirm New Password</Label>
+                          <Input
+                            id="confirmPassword"
+                            name="confirmPassword"
+                            type="password"
+                            value={passwordData.confirmPassword}
+                            onChange={handlePasswordChange}
+                            className="h-12 bg-[#131631] border-blue-900/30 text-white placeholder:text-blue-300/50 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 transition-all rounded-xl hover:border-blue-700/40 shadow-inner shadow-blue-900/10"
+                            placeholder="Confirm new password"
+                            required
+                          />
+                        </div>
+                        
+                        <div className="flex gap-3 pt-2">
+                          <Button 
+                            type="submit"
+                            disabled={isChangingPassword}
+                            className="flex-1 hover:cursor-pointer h-12 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white transition-all duration-300 shadow-lg shadow-blue-900/30 hover:shadow-blue-800/40 transform hover:scale-[1.02] active:scale-[0.98] rounded-xl border border-blue-500/30 hover:border-blue-400/40"
+                          >
+                            {isChangingPassword ? (
+                              <>
+                                <Loader2Icon className="h-5 w-5 animate-spin mr-2" />
+                                Updating...
+                              </>
+                            ) : "Update Password"}
+                          </Button>
+                          <Button 
+                            type="button"
+                            onClick={() => {
+                              setShowPasswordForm(false);
+                              setPasswordData({
+                                currentPassword: '',
+                                newPassword: '',
+                                confirmPassword: '',
+                              });
+                            }}
+                            className="px-6 h-12 bg-[#131631] hover:bg-[#1a1f37] text-blue-300 hover:text-blue-200 border border-blue-900/30 hover:border-blue-700/40 transform hover:scale-[1.02] active:scale-[0.98] rounded-xl transition-all duration-300 shadow-md hover:shadow-blue-900/20 hover:cursor-pointer"
+                            variant="outline"
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </form>
+                    )}
+                  </div>
                   
                   <div className="mt-6 pt-6 border-t border-blue-900/30">
                     <h4 className="text-lg font-medium text-white mb-4">Two-Factor Authentication</h4>
@@ -225,17 +380,6 @@ export default function ProfilePage() {
                       variant="outline"
                     >
                       Enable 2FA
-                    </Button>
-                  </div>
-                  
-                  <div className="mt-6 pt-6 border-t border-blue-900/30">
-                    <h4 className="text-lg font-medium text-white mb-4">Sessions</h4>
-                    <p className="text-gray-300 mb-4">Manage your active sessions</p>                  
-                    <Button 
-                      className="bg-[#131631] hover:bg-red-950/30 text-red-400 border border-red-900/30 hover:border-red-800/50 hover:text-red-300 transform hover:scale-[1.02] active:scale-[0.98] rounded-xl h-12 transition-all duration-300 shadow-md hover:shadow-red-900/20 hover:cursor-pointer"
-                      variant="outline"
-                    >
-                      Sign out of all devices
                     </Button>
                   </div>
                 </div>

@@ -5,6 +5,7 @@ import cookieParser from "cookie-parser";
 import chatRoutes from "./routes/chat.routes.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
 import albumRoutes from "./routes/album.routes.js";
+import { handleValidationErrors } from "./middleware/validation.middleware.js";
 import { fileURLToPath } from 'url';
 import path from 'path';
 import connectDB from "./db/connection.js";
@@ -30,6 +31,19 @@ app.use(cookieParser());
 app.use("/api/v1", dashboardRoutes);
 app.use("/api/v1/album", albumRoutes);
 app.use("/api/v1/chat", chatRoutes);
+
+// Error handling middleware (should be after all routes)
+app.use(handleValidationErrors);
+
+// Global error handler
+app.use((error, req, res, next) => {
+  console.error('Global error handler:', error);
+  res.status(500).json({
+    type: 'error',
+    error: 'Internal Server Error',
+    message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+  });
+});
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {

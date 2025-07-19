@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import videoSchema from "./video.schema";
 const { Schema } = mongoose;
 
 const albumSchema = new Schema({
@@ -11,10 +12,7 @@ const albumSchema = new Schema({
         type: String,
         required: true,
     },
-    videoPaths: [{
-        type: String,
-        required: true,
-    }],
+    videos: [videoSchema],
 }, {
   timestamps: true,
 });

@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import videoSchema from "./video.schema.js";
 const { Schema } = mongoose;
 
 const promptSchema = new Schema({
@@ -10,16 +11,11 @@ const promptSchema = new Schema({
         type: String,
         required: true,
     },
-    videoPath: {
-        type: String,
-        required: true,
-        index: true,
-    },
-    statusId: {
-        type: String,
-        required: true,
-        index: true,
-        default: null
+    video: {
+        type: videoSchema,
+        required: function() {
+            return this.status === "completed";
+        }
     },
     status: {
         type: String,

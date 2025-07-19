@@ -194,7 +194,7 @@ export default function Layout() {
                   <Breadcrumb>
                     <BreadcrumbList>
                       <BreadcrumbItem>
-                        <BreadcrumbLink href="/" className="text-[#a0aec0] text-xl font-normal hover:text-white">AnimY</BreadcrumbLink>
+                        <BreadcrumbLink className="text-[#a0aec0] text-xl font-normal hover:text-[#a0aec0]">AnimY</BreadcrumbLink>
                       </BreadcrumbItem>
                       <BreadcrumbSeparator/>
                       <BreadcrumbItem>

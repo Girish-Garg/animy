@@ -17,24 +17,18 @@ const dashboard = async (req, res) => {
             .lean();
 
         if (!user) {
-            return res.status(404).json({ type:'error', error: 'User not found' });
+            return res.status(404).json({ success: false, error: 'User not found' });
         }
 
         res.json({
-            type: "success",
+            success: true,
             message: "Dashboard data retrieved successfully",
-            user: {
-                totalCredit: user.totalCredit,
-                usedCredit: user.usedCredit,
-                creditRemaining: user.creditRemaining,
-                costPerCredit: user.CostPerCredit,
-            },
             chats: user.chatIds || [],
             albums: user.albumIds || [],
         })
     } catch (err) {
         console.error('Error in dashboard controller:', err);
-        return res.status(500).json({ type:'error', error: 'Internal Server Error' });
+        return res.status(500).json({ success: false, error: 'Internal Server Error' });
     }
 }
 
