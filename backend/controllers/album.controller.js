@@ -1,13 +1,13 @@
 import axios from "axios";
-import Album from "../schema/album.schema";
-import User from "../schema/user.schema";
+import Album from "../schema/album.schema.js";
+import User from "../schema/user.schema.js";
 
 export const createAlbum = async (req, res) => {
     try {
         const user = req.user;
-        const { albumName, videos } = req.body;
-        if (!albumName || !videos || !Array.isArray(videos)) {
-            return res.status(400).json({ success: false, error: "Album Name and Videos are required" });
+        const { albumName } = req.body;
+        if (!albumName) {
+            return res.status(400).json({ success: false, error: "Album Name is required" });
         }
 
         const existingAlbum = await Album.findOne({ albumName: albumName.trim(), userId: user._id });
@@ -18,7 +18,6 @@ export const createAlbum = async (req, res) => {
         const album = new Album({
             userId: user._id,
             albumName: albumName.trim(),
-            videos: videos,
         });
         await album.save();
         await User.findByIdAndUpdate(user._id, 
@@ -129,9 +128,16 @@ export const deleteAlbum = async (req, res) => {
             { $pull: { albumIds: album._id } }
         );
 
+        // Get remaining albums after deletion
+        const remainingAlbums = await Album.find({ userId: user._id })
+            .select("_id albumName createdAt updatedAt videos")
+            .sort({ updatedAt: 1 })
+            .lean();
+
         return res.status(200).json({
             success: true,
             message: "Album deleted successfully",
+            albums: remainingAlbums,
         });
     } catch (err) {
         console.error('Error in deleteAlbum controller:', err);
@@ -172,6 +178,12 @@ export const deleteFromAlbum = async (req, res) => {
         return res.status(200).json({
             success: true,
             message: "Video deleted successfully",
+            album: {
+                name: album.albumName,
+                videos: album.videos,
+                createdAt: album.createdAt,
+                updatedAt: album.updatedAt
+            }
         });
     } catch (err) {
         console.error('Error in deleteFromAlbum controller:', err);
@@ -202,9 +214,15 @@ export const renameAlbum = async (req, res) => {
             return res.status(404).json({ success: false, error: "Album not found or unauthorized" });
         }
 
+        const albums = await Album.find({ userId: user._id })
+            .select("_id albumName createdAt updatedAt videos")
+            .sort({ updatedAt: 1 })
+            .lean();
+
         return res.status(200).json({
             success: true,
             message: "Album renamed successfully",
+            albums,
         });
     } catch (err) {
         console.error('Error in renameAlbum controller:', err);
@@ -218,7 +236,7 @@ export const getAllAlbums = async (req, res) => {
 
         const albums = await Album.find({ userId: user._id })
         .select("_id albumName createdAt updatedAt videos")
-        .sort({ updatedAt: -1 })
+        .sort({ updatedAt: 1 })
         .lean();
 
         return res.status(200).json({
@@ -255,6 +273,12 @@ export const editVideoName = async (req, res) => {
         return res.status(200).json({
             success: true,
             message: "Video name updated successfully",
+            album: {
+                name: album.albumName,
+                videos: album.videos,
+                createdAt: album.createdAt,
+                updatedAt: album.updatedAt
+            }
         });
     } catch (err) {
         console.error('Error in editVideoName controller:', err);

@@ -31,7 +31,7 @@ export const createChatSchema = z.object({
       .max(100, 'Title must be less than 100 characters')
       .trim()
       .optional(),
-  }),
+  }).optional(),
 });
 
 export const updateChatTitleSchema = z.object({
@@ -58,29 +58,15 @@ export const createAlbumSchema = z.object({
     albumName: z.string()
       .min(1, 'Album name is required')
       .max(100, 'Album name must be less than 100 characters')
-      .trim(),
-    videos: z.array(
-      z.object({
-        videoUrl: z.string().url('Invalid video URL'),
-        prompt: z.string().min(1, 'Prompt is required').max(1000, 'Prompt too long'),
-        chatId: mongoIdSchema,
-        promptId: mongoIdSchema,
-        name: z.string()
-          .min(1, 'Video name is required')
-          .max(100, 'Video name must be less than 100 characters')
-          .trim()
-          .optional(),
-      })
-    ).min(1, 'At least one video is required'),
+      .trim()
   }),
 });
 
 export const addToAlbumSchema = z.object({
   body: z.object({
     video: z.object({
-      videoUrl: z.string().url('Invalid video URL'),
-      prompt: z.string().min(1, 'Prompt is required').max(1000, 'Prompt too long'),
-      promptId: mongoIdSchema,
+      videoPath: z.string().url('Invalid video URL'),
+      thumbnailPath: z.string().url('Invalid thumbnail URL'),
       name: z.string()
         .min(1, 'Video name is required')
         .max(100, 'Video name must be less than 100 characters')

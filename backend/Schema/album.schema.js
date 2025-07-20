@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import videoSchema from "./video.schema";
+import videoSchema from "./video.schema.js";
 const { Schema } = mongoose;
 
 const albumSchema = new Schema({

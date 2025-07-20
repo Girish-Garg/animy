@@ -21,6 +21,6 @@ router.get('/:chatId', validateRequest(chatParamsSchema), getChat);
 router.delete('/:chatId', validateRequest(chatParamsSchema), deleteChat);
 router.patch('/:chatId/rename', validateRequest(updateChatTitleSchema), renameChat);
 router.post('/:chatId/generate', validateRequest(generateVideoSchema), generateVideo);
-router.get('/:chatId/generate/status', validateRequest(getVideoStatusSchema), getVideoStatus);
+router.get('/:chatId/status/:promptId', validateRequest(getVideoStatusSchema), getVideoStatus);
 
 export default router;

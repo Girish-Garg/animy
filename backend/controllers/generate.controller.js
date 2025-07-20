@@ -47,23 +47,22 @@ export const generateVideo = async (req, res) => {
 export const getVideoStatus = async (req, res) => {
     try {
         const user = req.user;
-        // Use validated data from the middleware
         const { chatId, promptId } = req.validatedData.params;
-
-        const response = await axios.get(`${process.env.Video_API_BASE_URL}/video/status/${chatId}/${user._id}`);
+        console.log(`Fetching video status for chatId: ${chatId}, promptId: ${promptId}`);
+        const response = await axios.get(`${process.env.Video_API_BASE_URL}/video/status/${user._id}/${chatId}`);
 
         if (!response.data.success) {
             return res.status(500).json({ success: false, error: 'Failed to fetch video status' });
         }
-
+        console.log('Video status response:', response.data.status);
         if (promptId) {
             const existingPrompt = await Prompt.findById(promptId);
             if (!existingPrompt) {
                 return res.status(404).json({ success: false, error: 'Prompt not found' });
             }
 
-            if (response.data.status == 'failed') {
-                const { message } = response.data;
+            if (response.data.status.status == 'failed') {
+                const { message } = response.data.status;
                 await Prompt.findByIdAndUpdate(existingPrompt._id, {
                     status: "failed",
                     errorMessage: message || 'Failed to generate video',
@@ -76,10 +75,10 @@ export const getVideoStatus = async (req, res) => {
                 });
             }
             
-            if (response.data.status == 'success') {
+            if (response.data.status.status == 'complete') {
                 const video = {
-                    videoPath: response.data.videoUrl,
-                    thumbnailPath: response.data.thumbnailUrl,
+                    videoPath: response.data.status.videoUrl,
+                    thumbnailPath: response.data.status.thumbnailUrl,
                 }
                 await Prompt.findByIdAndUpdate(existingPrompt._id, {
                     status: "completed",
@@ -97,8 +96,12 @@ export const getVideoStatus = async (req, res) => {
 
         return res.status(200).json({
             success: true,
-            status: response.data.status,
-            message: response.data.message
+            status: response.data.status.status,
+            video: response.data.status.videoUrl ? {
+                videoPath: response.data.status.videoUrl,
+                thumbnailPath: response.data.status.thumbnailUrl,
+            } : null,
+            message: response.data.status.message
         });
 
     } catch (error) {

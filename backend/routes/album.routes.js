@@ -17,7 +17,7 @@ router.use(clerkAuthMiddleware);
 
 router.post('/', validateRequest(createAlbumSchema), createAlbum);
 router.get('/', getAllAlbums);
-router.patch('/:albumId/videos', validateRequest(addToAlbumSchema), addToAlbum);
+router.patch('/:albumId/video', validateRequest(addToAlbumSchema), addToAlbum);
 router.get('/:albumId', validateRequest(albumParamsSchema), getAlbum);
 router.delete('/:albumId', validateRequest(albumParamsSchema), deleteAlbum);
 router.delete('/:albumId/video/:videoId', validateRequest(albumVideoParamsSchema), deleteFromAlbum);

@@ -8,10 +8,27 @@ import DashboardPage from './pages/DashboardPage';
 import BillingPage from './pages/BillingPage';
 import ProfilePage from './pages/ProfilePage';
 import ChatSideBar from './pages/ChatSideBar';
+import { useAuth } from '@clerk/clerk-react';
+import { useEffect } from 'react';
+
+function MyComponent() {
+  const { getToken, userId, isSignedIn } = useAuth();
+
+  useEffect(() => {
+    async function fetchToken() {
+      const token = await getToken({ template: 'api_token'});
+      console.log(token);
+    }
+
+    fetchToken();
+  }, []);
+  return null;
+}
 
 function AppContent() {
   return (
     <div className="h-screen overflow-hidden">
+      <MyComponent />
       <main className="h-full">
         <Routes>
           <Route path="/signup" element={<Signup />} />

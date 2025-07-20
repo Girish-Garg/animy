@@ -3,27 +3,25 @@ import User from '../schema/user.schema.js';
 
 const clerkAuthMiddleware = async (req, res, next) => {
 
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ error: 'Unauthorized' });
-    }
-
     try {
-        const { userId } = getAuth(req);
-        if (!userId) {
+        const authResult = getAuth(req);
+
+        if (!authResult.userId) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
-        const clerkUser = await clerkClient.users.getUser(userId);
+        const clerkUser = await clerkClient.users.getUser(authResult.userId);
         const email = clerkUser.emailAddresses[0]?.emailAddress;
 
         if (!email) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
-        let user = await User.findOne({ clerkId: userId , email: email });
+        let user = await User.findOne({ clerkId: authResult.userId , email: email });
         if (!user) {
             user = await User.create({
-                clerkId: userId,
+                clerkId: authResult.userId,
                 email: email,
+                chatIds: [],
+                albumIds: []
             })
         }
         req.user = user;
