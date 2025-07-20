@@ -2,7 +2,7 @@
   "watch": ["backend"],
   "ext": "js,json",
   "ignore": ["node_modules/", "__pycache__/"],
-  "exec": "node backend/index.js",
+  "exec": "node index.js",
   "env": {
     "NODE_ENV": "development"
   },

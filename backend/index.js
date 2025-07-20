@@ -6,18 +6,12 @@ import chatRoutes from "./routes/chat.routes.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
 import albumRoutes from "./routes/album.routes.js";
 import { handleValidationErrors } from "./middleware/validation.middleware.js";
-import { fileURLToPath } from 'url';
 import path from 'path';
 import connectDB from "./db/connection.js";
 import { clerkMiddleware } from "@clerk/express";
 
-// Get the directory name of the current module
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const rootDir = path.resolve(__dirname, '../');
 
-// Config dotenv with explicit path to .env file
-dotenv.config({ path: path.join(rootDir, '.env') });
+dotenv.config();
 connectDB();
 const app = express();
 
@@ -25,10 +19,7 @@ app.use(cors({
   origin: process.env.FRONTEND_URL || "http://localhost:5173",
   credentials: true
 }));
-app.use(clerkMiddleware({
-  publishableKey: process.env.VITE_CLERK_PUBLISHABLE_KEY,
-  secretKey: process.env.CLERK_SECRET_KEY
-}));
+app.use(clerkMiddleware());
 app.use(express.json());
 app.use(cookieParser());
 
@@ -36,7 +27,6 @@ app.use("/api/v1", dashboardRoutes);
 app.use("/api/v1/album", albumRoutes);
 app.use("/api/v1/chat", chatRoutes);
 
-// Error handling middleware (should be after all routes)
 app.use(handleValidationErrors);
 
 // Global error handler

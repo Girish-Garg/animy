@@ -1,0 +1,28 @@
+{
+  "name": "animy-backend",
+  "version": "1.0.0",
+  "description": "Backend API for Animy application",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "health": "node -e \"require('http').get('http://localhost:5000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })\""
+  },
+  "dependencies": {
+    "@clerk/express": "^1.7.0",
+    "axios": "^1.10.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0",
+    "mongoose": "^8.15.1",
+    "zod": "^3.25.49"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
