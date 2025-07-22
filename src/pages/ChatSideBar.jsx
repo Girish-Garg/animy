@@ -253,10 +253,11 @@ export default function Layout() {
         return;
       }
 
-      const response = await axios.get(`${baseURL}/chat/${chatId}/prompt/${promptId}`, {
+      const response = await axios.get(`${baseURL}/chat/${chatId}/status/${promptId}`, {
         headers: {
           Authorization: `Bearer ${token}`
-        }
+        },
+        withCredentials: true,
       });
 
       const data = response.data;

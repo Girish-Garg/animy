@@ -16,7 +16,7 @@ const clerkAuthMiddleware = async (req, res, next) => {
         const email = clerkUser.emailAddresses[0]?.emailAddress;
 
         if (!email) {
-            return res.status(401).json({ error: 'Unauthorized' });
+            return res.status(404).json({ error: 'Not Found' });
         }
         let user = await User.findOne({ clerkId: authResult.userId , email: email });
         if (!user) {
