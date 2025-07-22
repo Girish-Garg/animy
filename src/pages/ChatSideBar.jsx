@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation, Outlet } from 'react-router-dom';
+import { useNavigate, useLocation, Outlet, useSearchParams } from 'react-router-dom';
+import axios from 'axios';
 import {
   SidebarProvider,
   Sidebar,
@@ -15,7 +16,6 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import AlbumOverlay from '../components/AlbumOverlay';
-import { generateMockAlbumData } from '../lib/albumUtils';
 import {
   Breadcrumb,
   BreadcrumbList,
@@ -53,10 +53,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { useAuth } from '@clerk/clerk-react';
 
 function CustomTrigger() {
   const { toggleSidebar } = useSidebar();
-  
+  const { getToken } = useAuth();
   return (
     <button 
       onClick={toggleSidebar} 
@@ -71,6 +72,8 @@ function CustomTrigger() {
 export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const { getToken } = useAuth();
   const [activePage, setActivePage] = useState('dashboard');
   const [albumOverlayOpen, setAlbumOverlayOpen] = useState(false);  const [selectedAlbum, setSelectedAlbum] = useState(null);
   const [activeChat, setActiveChat] = useState(null);
@@ -80,6 +83,34 @@ export default function Layout() {
   const [editingChatId, setEditingChatId] = useState(null);
   const [editingChatName, setEditingChatName] = useState('');
   const [blurEnabled, setBlurEnabled] = useState(true);
+  const [authToken, setAuthToken] = useState(null);
+  
+  const baseURL = import.meta.env.VITE_BACKEND_URL;
+
+  // Initialize token on component mount
+  useEffect(() => {
+    const initializeToken = async () => {
+      try {
+        const token = await getToken();
+        setAuthToken(token);
+      } catch (error) {
+        console.error('Failed to get auth token:', error);
+      }
+    };
+    initializeToken();
+  }, [getToken]);
+
+  // Function to refresh token when needed
+  const refreshToken = async () => {
+    try {
+      const token = await getToken();
+      setAuthToken(token);
+      return token;
+    } catch (error) {
+      console.error('Failed to refresh auth token:', error);
+      return null;
+    }
+  };
   
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -88,24 +119,106 @@ export default function Layout() {
     console.log('Submitted:', inputValue);
     setInputValue('');
   };
-  const [chatItems, setChatItems] = useState([
-    { id: 'chat-1', title: 'Understanding AI Basics' },
-    { id: 'chat-2', title: 'Creative Video Ideas' },
-    { id: 'chat-3', title: 'Animation Techniques' },
-    { id: 'chat-4', title: 'Modern UI Design' },
-    { id: 'chat-5', title: 'Visual Effects Tutorial' }
-  ]);
+  const [chatItems, setChatItems] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [currentChatData, setCurrentChatData] = useState(null);
+  const [isChatLoading, setIsChatLoading] = useState(false);
+
+  // Function to fetch chats from API
+  const fetchChats = async () => {
+    try {
+      const token = authToken || await refreshToken();
+      if (!token) {
+        console.error('No auth token available');
+        return;
+      }
+      
+      setIsLoading(true);
+      const response = await axios.get(`${baseURL}/chat`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      const data = response.data;
+      
+      if (data.success) {
+        // Transform API data to match component format
+        const transformedChats = data.chats.map(chat => ({
+          id: chat._id,
+          title: chat.title,
+          createdAt: chat.createdAt
+        }));
+        setChatItems(transformedChats);
+      } else {
+        console.error('Failed to fetch chats:', data.message);
+      }
+    } catch (error) {
+      console.error('Error fetching chats:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Function to fetch specific chat data
+  const fetchChatData = async (chatId) => {
+    try {
+      const token = authToken || await refreshToken();
+      if (!token) {
+        console.error('No auth token available');
+        return;
+      }
+      
+      setIsChatLoading(true);
+      const response = await axios.get(`${baseURL}/chat/${chatId}`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      const data = response.data;
+      
+      if (data.success) {
+        setCurrentChatData(data.chat);
+      } else {
+        console.error('Failed to fetch chat data:', data.message);
+      }
+    } catch (error) {
+      console.error('Error fetching chat data:', error);
+    } finally {
+      setIsChatLoading(false);
+    }
+  };
   useEffect(() => {
     const path = location.pathname.replace(/^\//, '') || 'dashboard';
     setActivePage(path);
   }, [location]);
+
+  useEffect(() => {
+    // Only fetch chats when we have a token
+    if (authToken) {
+      fetchChats();
+    }
+  }, [authToken]);
+
+  // Handle URL parameters to load specific chat
+  useEffect(() => {
+    const chatId = searchParams.get('id');
+    if (chatId && location.pathname.includes('/chat/chat')) {
+      setActiveChat(chatId);
+      setActivePage('chat');
+      localStorage.setItem('animy_last_chat', chatId);
+      fetchChatData(chatId);
+    }
+  }, [searchParams, location.pathname]);
+
   useEffect(() => {
     const lastChatId = localStorage.getItem('animy_last_chat');
-    if (lastChatId) {
+    if (lastChatId && !searchParams.get('id')) {
       const chatExists = chatItems.some(chat => chat.id === lastChatId);
       if (chatExists) {
         setActiveChat(lastChatId);
         setActivePage('chat');
+        // Fetch the chat data when restoring from localStorage
+        fetchChatData(lastChatId);
       }
     }
   }, [chatItems]);
@@ -132,20 +245,10 @@ const renderMenuItem = (item) => {
           `}          
           onClick={() => {
             if (key === 'album') {
-              const mockAlbums = Array(6).fill().map((_, i) => ({
-                id: `album-${i}`,
-                albumName: `Album ${i + 1}`,
-                coverImage: '',
-                videos: generateMockAlbumData(Math.floor(Math.random() * 6) + 2).videos,
-              }));
-              
-              setSelectedAlbum({
-                albums: mockAlbums
-              });
               setAlbumOverlayOpen(true);
               setActivePage(key);
             } else if (key === 'New Chat') {
-              handleNewChat();
+              // handleNewChat();
             } else {
               navigate(`/${key}`);
               setActiveChat(null);
@@ -184,17 +287,47 @@ const renderMenuItem = (item) => {
     setActiveChat(chatId);
     localStorage.setItem('animy_last_chat', chatId);
     setActivePage('chat');
+    navigate(`/chat/chat?id=${chatId}`);
+    
+    // Fetch the specific chat data
+    fetchChatData(chatId);
     
     console.log(`Opening chat ${chatId}`);
   };
-  const handleNewChat = () => {
-    const newChat = {
-      id: `chat-${chatItems.length + 1}`,
-      title: `New Chat ${chatItems.length + 1}`
-    };    setChatItems([newChat, ...chatItems]);
-    setActiveChat(newChat.id);
-    setActivePage('chat');
-    localStorage.setItem('animy_last_chat', newChat.id);  };
+  const handleNewChat = async () => {
+    try {
+      const token = authToken || await refreshToken();
+      if (!token) {
+        console.error('No auth token available');
+        return;
+      }
+      
+      const response = await axios.post(`${baseURL}/chat`, {
+        title: 'New Chat'
+      }, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      
+      const data = response.data;
+      
+      if (data.success) {
+        // Refresh the chats list
+        await fetchChats();
+        
+        // Set the new chat as active
+        setActiveChat(data.chat._id);
+        setActivePage('chat');
+        localStorage.setItem('animy_last_chat', data.chat._id);
+        navigate(`/chat/chat?id=${data.chat._id}`);
+      } else {
+        console.error('Failed to create new chat:', data.message);
+      }
+    } catch (error) {
+      console.error('Error creating new chat:', error);
+    }
+  };
 
   const handleChatRename = (chat) => {
     setEditingChatId(chat.id);
@@ -214,17 +347,40 @@ const renderMenuItem = (item) => {
     }, 0);
   };
 
-  const handleSaveChatName = (chatId) => {
+  const handleSaveChatName = async (chatId) => {
     if (editingChatName.trim()) {
-      console.log('Save chat name:', editingChatName, 'for chat:', chatId);
-      // Update the chat name in the chatItems array
-      setChatItems(prevChatItems => 
-        prevChatItems.map(chat => 
-          chat.id === chatId 
-            ? { ...chat, title: editingChatName.trim() }
-            : chat
-        )
-      );
+      try {
+        const token = authToken || await refreshToken();
+        if (!token) {
+          console.error('No auth token available');
+          return;
+        }
+        
+        const response = await axios.put(`${baseURL}/chat/${chatId}`, {
+          title: editingChatName.trim()
+        }, {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        });
+        
+        const data = response.data;
+        
+        if (data.success) {
+          // Update the chat name in the local state
+          setChatItems(prevChatItems => 
+            prevChatItems.map(chat => 
+              chat.id === chatId 
+                ? { ...chat, title: editingChatName.trim() }
+                : chat
+            )
+          );
+        } else {
+          console.error('Failed to update chat name:', data.message);
+        }
+      } catch (error) {
+        console.error('Error updating chat name:', error);
+      }
     }
     setEditingChatId(null);
     setEditingChatName('');
@@ -237,15 +393,37 @@ const renderMenuItem = (item) => {
     setBlurEnabled(true);
   };
 
-  const handleChatDelete = (chat) => {
-    console.log('Delete chat:', chat.title);
-    setChatItems(prevChatItems => prevChatItems.filter(item => item.id !== chat.id));
-    
-    // If we're deleting the active chat, clear the active chat
-    if (activeChat === chat.id) {
-      setActiveChat(null);
-      setActivePage('dashboard');
-      localStorage.removeItem('animy_last_chat');
+  const handleChatDelete = async (chat) => {
+    try {
+      const token = authToken || await refreshToken();
+      if (!token) {
+        console.error('No auth token available');
+        return;
+      }
+      
+      const response = await axios.delete(`${baseURL}/chat/${chat.id}`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      
+      const data = response.data;
+      
+      if (data.success) {
+        // Remove the chat from local state
+        setChatItems(prevChatItems => prevChatItems.filter(item => item.id !== chat.id));
+        
+        // If we're deleting the active chat, clear the active chat
+        if (activeChat === chat.id) {
+          setActiveChat(null);
+          setActivePage('dashboard');
+          localStorage.removeItem('animy_last_chat');
+        }
+      } else {
+        console.error('Failed to delete chat:', data.message);
+      }
+    } catch (error) {
+      console.error('Error deleting chat:', error);
     }
     setOpenDropdownId(null);
   };
@@ -366,7 +544,11 @@ const renderMenuItem = (item) => {
                     
                     <SidebarGroupLabel className="px-2 text-gray-400 text-sm font-medium">Recent Chats</SidebarGroupLabel>
                     <SidebarMenu className="space-y-1 mt-2 max-h-[calc(100vh-320px)] overflow-y-auto pr-1">
-                        {chatItems.length > 0 ? (
+                        {isLoading ? (
+                          <div className="text-center py-6">
+                            <p className="text-gray-400 text-sm">Loading chats...</p>
+                          </div>
+                        ) : chatItems.length > 0 ? (
                           chatItems.map(renderChatItem)
                         ) : (
                           <div className="text-center py-6">
@@ -408,7 +590,8 @@ const renderMenuItem = (item) => {
                     </div>
                 </SidebarFooter>
             </Sidebar>        
-            <SidebarInset className="flex-1 p-6 bg-transparent text-white overflow-y-auto overflow-x-hidden min-w-0 relative z-10">              <div className='flex items-center justify-between'>                
+            <SidebarInset className="flex-1 pt-6 bg-transparent text-white overflow-y-auto overflow-x-hidden min-w-0 relative z-10">              
+              <div className='flex items-center px-6 justify-between'>             
                 <div className="flex items-center gap-2">
                   <CustomTrigger />
                   <Breadcrumb>
@@ -431,15 +614,54 @@ const renderMenuItem = (item) => {
                 </div>
                 <BellIcon className='size-5 text-[#a0aec0] hover:text-white transition-colors hover:cursor-pointer'/>
               </div>
-              <div className="mt-6">
+              <div className="mt-6 flex flex-col h-[calc(100vh-100px)] overflow-hidden">
                 {activeChat ? (                  
-                  <div className="flex flex-col h-[calc(100vh-140px)] px-6">
-                    <div className="flex-1 overflow-y-auto mb-4">
-                      <div className="flex flex-col items-center justify-center h-full text-center">
-                        <p className="text-gray-300">Your conversation will appear here</p>
-                      </div>
+                  <div className="flex flex-col h-full">
+                    <div className="flex-1 overflow-y-auto px-8 backdrop-blur-sm rounded-2xl py-4 custom-scrollbar">
+                      {isChatLoading ? (
+                        <div className="flex flex-col items-center justify-center h-full text-center">
+                          <p className="text-gray-600">Loading chat...</p>
+                        </div>
+                      ) : currentChatData && currentChatData.prompts?.length > 0 ? (
+                        <div className="space-y-4 pb-4">
+                          {currentChatData.prompts.map((prompt, index) => (
+                            <div key={prompt._id} className="flex flex-col space-y-3">
+                              {/* User Message */}
+                              <div className="flex justify-end">
+                                <div className="max-w-[70%] bg-[#0F1535] text-gray-500 border border-zinc-600/80 rounded-full px-4 py-3 shadow-sm">
+                                  <p className="text-sm leading-relaxed">{prompt.prompt}</p>
+                                </div>
+                              </div>
+                              
+                              {/* Video Response */}
+                              {prompt.video && (
+                                <div className="flex justify-center">
+                                  <div className="w-[80%] rounded-2xl rounded-tr-md p-3">
+                                    <div className="relative aspect-video rounded-xl overflow-hidden bg-black">
+                                      <video 
+                                        controls 
+                                        poster={prompt.video.thumbnailPath}
+                                        className="w-full h-full object-cover"
+                                        preload="metadata"
+                                      >
+                                        <source src={prompt.video.videoPath} type="video/mp4" />
+                                        Your browser does not support the video tag.
+                                      </video>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center h-full text-center">
+                          <p className="text-gray-600">No messages in this chat yet</p>
+                          <p className="text-gray-400 text-sm mt-1">Start the conversation below</p>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex-shrink-0">
+                    <div className="flex-shrink-0 px-6 py-6">
                       <form onSubmit={handleSubmit} className="relative">
                         <input
                           type="text"

@@ -1,54 +1,106 @@
 import React, { useState, useEffect } from 'react';
-import { useUser } from '@clerk/clerk-react';
+import { useUser, useAuth } from '@clerk/clerk-react';
 import { CircularProgressbar, buildStyles } from 'react-circular-progressbar';
 import 'react-circular-progressbar/dist/styles.css';
 import { Send, ArrowRight, ChevronRight, Plus } from 'lucide-react';
 import AlbumOverlay from '../components/AlbumOverlay';
-import { generateMockAlbumData } from '../lib/albumUtils';
+import axios from 'axios';
+
+const baseURL = import.meta.env.VITE_BACKEND_URL;
 
 export default function DashboardPage() {
   const { user } = useUser();
+  const { getToken } = useAuth();
   const [dashboardData, setDashboardData] = useState({
-    user: {
-      totalCredit: 10000,
-      usedCredit: 9000,
-      creditRemaining: 1000,
-      costPerCredit: 1,
-    },
     chats: [],
     albums: []
   });
   const [loading, setLoading] = useState(true);
   const [inputValue, setInputValue] = useState('');
   const [albumOverlayOpen, setAlbumOverlayOpen] = useState(false);
-  const [selectedAlbum, setSelectedAlbum] = useState(null);
+  const [selectedAlbumId, setSelectedAlbumId] = useState(null);
+  const [authToken, setAuthToken] = useState(null);
+
+  // Initialize token on component mount
+  useEffect(() => {
+    const initializeToken = async () => {
+      try {
+        const token = await getToken();
+        setAuthToken(token);
+      } catch (error) {
+        console.error('Failed to get auth token:', error);
+      }
+    };
+    if (user) {
+      initializeToken();
+    }
+  }, [getToken, user]);
+
+  // Function to refresh token when needed
+  const refreshToken = async () => {
+    try {
+      const token = await getToken();
+      setAuthToken(token);
+      return token;
+    } catch (error) {
+      console.error('Failed to refresh auth token:', error);
+      return null;
+    }
+  };
   
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
-        const response = await fetch('/api/dashboard', {
+        const token = authToken || await refreshToken();
+        if (!token) {
+          console.error('No auth token available');
+          setLoading(false);
+          return;
+        }
+        
+        const response = await axios.get(`${baseURL}/dashboard`, {
+          withCredentials: true,
           headers: {
-            'Authorization': `Bearer ${await user?.getToken()}`,
+            Authorization: `Bearer ${token}`
           }
         });
         
-        if (response.ok) {
-          const data = await response.json();
-          setDashboardData(data);
+        if (response.data.success) {
+          setDashboardData({
+            chats: response.data.chats || [],
+            albums: response.data.albums || []
+          });
         }
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
+        // If unauthorized, try refreshing token
+        if (error.response?.status === 401) {
+          await refreshToken();
+        }
+        // Keep empty state on error
       } finally {
         setLoading(false);
       }
     };
 
-    if (user) {
+    // Only start loading when user and token are available
+    if (user && authToken) {
+      setLoading(true);
       fetchDashboardData();
-    } else {
-      setTimeout(() => setLoading(false), 500);
     }
-  }, [user]);
+    // If no user or token, keep loading state until both are available
+  }, [user, authToken]);
+
+  // Handle authentication timeout
+  useEffect(() => {
+    const authTimeout = setTimeout(() => {
+      if (!user && loading) {
+        setLoading(false);
+      }
+    }, 5000); // Wait 5 seconds for authentication
+
+    return () => clearTimeout(authTimeout);
+  }, [user, loading]);
 
   const percentage = 90;
   
@@ -58,6 +110,40 @@ export default function DashboardPage() {
     console.log('Processing input:', inputValue);
     
     setInputValue('');
+  };
+
+  const handleAlbumClick = (albumId) => {
+    // Find the album to check if it has videos
+    const album = dashboardData.albums.find(a => a._id === albumId);
+    if (!album || !album.videos || album.videos.length === 0) {
+      return; // Don't open if album has no videos
+    }
+    
+    setSelectedAlbumId(albumId);
+    setAlbumOverlayOpen(true);
+  };
+
+  const handleChatClick = (chatId) => {
+    // Navigate to specific chat
+    window.location.href = `/chat?id=${chatId}`;
+  };
+  
+  // Get latest 3 albums and 3 chats
+  const recentAlbums = dashboardData.albums?.slice(0, 3) || [];
+  const recentChats = dashboardData.chats?.slice(0, 3) || [];
+
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInHours = (now - date) / (1000 * 60 * 60);
+    
+    if (diffInHours < 24) {
+      return `${Math.floor(diffInHours)}h ago`;
+    } else if (diffInHours < 48) {
+      return 'Yesterday';
+    } else {
+      return date.toLocaleDateString();
+    }
   };
   
   return (
@@ -209,19 +295,7 @@ export default function DashboardPage() {
           <div className="flex justify-between items-center mb-1">
             <h2 className="text-xl font-medium">Recent Albums</h2>            
             <button 
-              onClick={() => {                
-                const mockAlbums = Array(6).fill().map((_, i) => ({
-                  id: `album-${i}`,
-                  albumName: `Album ${i + 1}`,
-                  coverImage: '',
-                  videos: generateMockAlbumData(Math.floor(Math.random() * 6) + 2).videos,
-                }));
-                
-                setSelectedAlbum({
-                  albums: dashboardData.albums?.length ? dashboardData.albums : mockAlbums
-                });
-                setAlbumOverlayOpen(true);
-              }}
+              onClick={() => setAlbumOverlayOpen(true)}
               className="text-sm text-blue-400 hover:text-blue-500 hover:cursor-pointer flex items-center gap-1 group transition-colors"
             >
               <span>View All</span>
@@ -233,13 +307,53 @@ export default function DashboardPage() {
             <span>All your recent video saves</span>
           </div>
 
-          <div className="flex-grow flex items-center justify-center">
+          <div className={`flex-grow flex ${recentAlbums.length > 0 ? 'items-start' : 'items-center justify-center'}`}>
             {loading ? (
               <div className="text-center py-8">
                 <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500 mx-auto mb-2"></div>
                 <p className="text-gray-400">Loading albums...</p>
               </div>
-            ) : (              <div className="flex flex-col items-center justify-center text-gray-400 p-4">
+            ) : recentAlbums.length > 0 ? (
+              <div className="w-full space-y-3">
+                {recentAlbums.map((album) => {
+                  const hasVideos = album.videos && album.videos.length > 0;
+                  return (
+                    <div 
+                      key={album._id}
+                      onClick={() => hasVideos && handleAlbumClick(album._id)}
+                      className={`flex items-center gap-3 p-3 rounded-lg transition-colors border ${
+                        hasVideos 
+                          ? 'bg-blue-900/10 hover:bg-blue-900/20 border-blue-900/20 hover:border-blue-800/40 cursor-pointer' 
+                          : 'bg-gray-900/10 border-gray-800/20 cursor-not-allowed opacity-60'
+                      }`}
+                    >
+                      <div className={`w-12 h-8 rounded flex items-center justify-center flex-shrink-0 ${
+                        hasVideos 
+                          ? 'bg-gradient-to-br from-blue-600 to-purple-600' 
+                          : 'bg-gradient-to-br from-gray-600 to-gray-700'
+                      }`}>
+                        <Plus size={16} className="text-white" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-medium truncate ${
+                          hasVideos ? 'text-white' : 'text-gray-400'
+                        }`}>
+                          {album.albumName}
+                        </p>
+                        <p className="text-gray-400 text-xs">
+                          {album.videos?.length || 0} videos
+                        </p>
+                      </div>
+                      <ChevronRight 
+                        size={14} 
+                        className={hasVideos ? 'text-gray-400' : 'text-gray-600'} 
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center text-gray-400 p-4">
                 <div className="w-12 h-12 rounded-full bg-blue-900/30 flex items-center justify-center mb-2">
                   <Plus size={24} className="text-blue-400" />
                 </div>
@@ -265,22 +379,58 @@ export default function DashboardPage() {
             <span>View history of recent chats</span>
           </div>
 
-          <div className="flex flex-grow items-center justify-center bg-[#0c1d43]/30 rounded-lg backdrop-blur-md">
-            <div className="text-center p-6">
-              <p className="text-gray-300 mb-2">Hey dude! It's empty!</p>
-              <p className="text-gray-400 text-sm mb-4">Fill it up with your creative ideas</p>
-              <a href="/chat" className="bg-blue-600/50 hover:bg-blue-600/70 text-white px-4 py-2 rounded-md transition-colors text-sm flex items-center gap-2 mx-auto hover:cursor-pointer w-fit">
-                <span>Start a chat</span>
-                <ArrowRight size={14} />
-              </a>
-            </div>
+          <div className={`flex-grow flex ${recentChats.length > 0 ? 'items-start' : 'items-center justify-center'}`}>
+            {loading ? (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500 mx-auto mb-2"></div>
+                <p className="text-gray-400">Loading chats...</p>
+              </div>
+            ) : recentChats.length > 0 ? (
+              <div className="w-full space-y-2 max-h-full overflow-y-auto">
+                {recentChats.map((chat) => (
+                  <div 
+                    key={chat._id}
+                    onClick={() => handleChatClick(chat._id)}
+                    className="flex items-center gap-3 p-3 bg-blue-900/10 hover:bg-blue-900/20 rounded-lg cursor-pointer transition-colors border border-blue-900/20 hover:border-blue-800/40"
+                  >
+                    <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-blue-500 rounded-full flex items-center justify-center flex-shrink-0 text-white text-xs font-bold">
+                      C
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white text-sm font-medium truncate">
+                        {chat.title}
+                      </p>
+                      <p className="text-gray-400 text-xs">
+                        {formatDate(chat.createdAt)}
+                      </p>
+                    </div>
+                    <ChevronRight size={14} className="text-gray-400" />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center text-gray-400 p-4">
+                <div className="w-12 h-12 rounded-full bg-blue-900/30 flex items-center justify-center mb-2">
+                  <Plus size={24} className="text-blue-400" />
+                </div>
+                <p className="text-center">Hey dude! It's empty!</p>
+                <p className="text-center text-xs text-gray-500 mt-1 mb-4">Fill it up with your creative ideas</p>
+                <a href="/chat" className="bg-blue-600/50 hover:bg-blue-600/70 text-white px-4 py-2 rounded-md transition-colors text-sm flex items-center gap-2 mx-auto hover:cursor-pointer w-fit">
+                  <span>Start a chat</span>
+                  <ArrowRight size={14} />
+                </a>
+              </div>
+            )}
           </div>
         </div>
       </div> 
       <AlbumOverlay 
         isOpen={albumOverlayOpen}
-        onClose={() => setAlbumOverlayOpen(false)} 
-        albumData={selectedAlbum}
+        onClose={() => {
+          setAlbumOverlayOpen(false);
+          setSelectedAlbumId(null);
+        }}
+        initialAlbumId={selectedAlbumId}
       />
     </div>
   );

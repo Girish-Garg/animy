@@ -11,7 +11,7 @@ const dashboard = async (req, res) => {
             })
             .populate({
                 path: 'albumIds',
-                select: 'albumName thumbnailPath createdAt updatedAt',
+                select: 'albumName videos createdAt updatedAt',
                 options: { sort: { updatedAt: -1 }}
             })
             .lean();

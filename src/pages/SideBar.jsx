@@ -15,7 +15,6 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import AlbumOverlay from '../components/AlbumOverlay';
-import { generateMockAlbumData } from '../lib/albumUtils';
 import {
   Breadcrumb,
   BreadcrumbList,
@@ -94,17 +93,6 @@ export default function Layout() {
           onClick={() => {
             if (key === 'album') {
               // For albums, open the overlay instead of navigating
-              // Generate mock albums for development
-              const mockAlbums = Array(6).fill().map((_, i) => ({
-                id: `album-${i}`,
-                albumName: `Album ${i + 1}`,
-                coverImage: '',
-                videos: generateMockAlbumData(Math.floor(Math.random() * 6) + 2).videos,
-              }));
-              
-              setSelectedAlbum({
-                albums: mockAlbums
-              });
               setAlbumOverlayOpen(true);
             } else {
               // For other items, navigate as usual

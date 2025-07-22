@@ -1,0 +1,582 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { X, ChevronLeft, MoreVertical, Edit3, Trash2 } from 'lucide-react';
+import gsap from 'gsap';
+import axios from 'axios';
+const baseURL = import.meta.env.VITE_BACKEND_URL;
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useAuth } from '@clerk/clerk-react';
+import { toast } from 'sonner';
+import OpenPlayVideo from './OpenPlayVideo';
+
+const OpenAlbumOverlay = ({ 
+  isOpen, 
+  album, 
+  onClose, 
+  onBackToAlbums 
+}) => {
+  const contentRef = useRef(null);
+  const [hoveredVideoId, setHoveredVideoId] = useState(null);
+  const [openVideoDropdownId, setOpenVideoDropdownId] = useState(null);
+  const [editingVideoId, setEditingVideoId] = useState(null);
+  const [editingVideoName, setEditingVideoName] = useState('');
+  const [videoBlurEnabled, setVideoBlurEnabled] = useState(true);
+  const [showVideoPlayer, setShowVideoPlayer] = useState(false);
+  const [selectedVideo, setSelectedVideo] = useState(null);
+  const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
+  const [albumData, setAlbumData] = useState(null);
+  const [videos, setVideos] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [deletingVideoId, setDeletingVideoId] = useState(null);
+  const [renamingVideoId, setRenamingVideoId] = useState(null);
+  const [authToken, setAuthToken] = useState(null);
+
+  const { getToken } = useAuth();
+
+  // Initialize token when component opens
+  useEffect(() => {
+    const initializeToken = async () => {
+      try {
+        const token = await getToken();
+        setAuthToken(token);
+      } catch (error) {
+        console.error('Failed to get auth token:', error);
+      }
+    };
+    if (isOpen) {
+      initializeToken();
+    }
+  }, [isOpen, getToken]);
+
+  // Function to refresh token when needed
+  const refreshToken = async () => {
+    try {
+      const token = await getToken();
+      setAuthToken(token);
+      return token;
+    } catch (error) {
+      console.error('Failed to refresh auth token:', error);
+      return null;
+    }
+  };
+
+  // Function to fetch album details and videos
+  const fetchAlbumVideos = async () => {
+    if (!album?.id) return;
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const token = authToken || await refreshToken();
+      if (!token) {
+        setError('Authentication failed. Please try again.');
+        return;
+      }
+
+      const response = await axios.get(`${baseURL}/album/${album.id}`, {
+        withCredentials: true,
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      if (response.data.success) {
+        setAlbumData(response.data.album);
+        // Transform videos to match component structure
+        const transformedVideos = response.data.album.videos.map(video => ({
+          id: video._id || Math.random().toString(36),
+          path: video.videoPath,
+          title: video.name,
+          thumbnailPath: video.thumbnailPath
+        }));
+        setVideos(transformedVideos);
+      } else {
+        setError('Failed to fetch album videos');
+        toast.error('Failed to load album videos');
+      }
+    } catch (err) {
+      console.error('Error fetching album videos:', err);
+      setError('Failed to fetch album videos. Please try again.');
+      toast.error('Failed to load album videos. Please check your connection.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Function to delete a video
+  const handleDeleteVideo = async (video) => {
+    if (!album?.id || !video?.id) return;
+    
+    setDeletingVideoId(video.id);
+    
+    try {
+      const token = authToken || await refreshToken();
+      if (!token) {
+        toast.error('Authentication failed. Please try again.');
+        return;
+      }
+
+      const response = await axios.delete(`${baseURL}/album/${album.id}/video/${video.id}`, {
+        withCredentials: true,
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      if (response.data.success) {
+        // Update the album data and videos from the response
+        setAlbumData(response.data.album);
+        
+        // Transform the updated videos
+        const transformedVideos = response.data.album.videos.map(video => ({
+          id: video._id || Math.random().toString(36),
+          path: video.videoPath,
+          title: video.name,
+          thumbnailPath: video.thumbnailPath
+        }));
+        setVideos(transformedVideos);
+        
+        toast.success('Video deleted successfully');
+        
+        // Close the video player if the deleted video was being played
+        if (selectedVideo?.id === video.id) {
+          setShowVideoPlayer(false);
+          setSelectedVideo(null);
+        }
+      } else {
+        toast.error('Failed to delete video');
+      }
+    } catch (err) {
+      console.error('Error deleting video:', err);
+      toast.error('Failed to delete video. Please try again.');
+    } finally {
+      setDeletingVideoId(null);
+      setOpenVideoDropdownId(null);
+    }
+  };
+
+  // Fetch album videos when component opens or album changes
+  useEffect(() => {
+    if (isOpen && album?.id) {
+      fetchAlbumVideos();
+    }
+  }, [isOpen, album?.id]);
+
+  // Animation for entrance
+  useEffect(() => {
+    if (isOpen && contentRef.current && !loading) {
+      // Reset position for animation
+      gsap.set(contentRef.current, { y: 30, scale: 0.97, autoAlpha: 0 });
+
+      // Get all cards to animate them in staggered sequence
+      const cards = contentRef.current.querySelectorAll('.album-card');
+
+      // Animate overlay in
+      const tl = gsap.timeline();
+
+      // Animate in the main container
+      tl.to(contentRef.current, {
+        y: 0,
+        scale: 1,
+        autoAlpha: 1,
+        duration: 0.5,
+        ease: 'back.out(1.2)'
+      });
+
+      // Only animate cards if they exist
+      if (cards.length > 0) {
+        tl.fromTo(cards,
+          { y: 20, autoAlpha: 0 },
+          {
+            y: 0,
+            autoAlpha: 1,
+            stagger: 0.05,
+            duration: 0.4,
+            ease: 'power2.out'
+          },
+          '-=0.1'
+        );
+      }
+    }
+  }, [isOpen, loading]);
+
+  const handleBackToAlbums = () => {
+    // Create animation for transitioning back to albums view
+    gsap.to(contentRef.current, {
+      opacity: 0,
+      y: 20,
+      duration: 0.3,
+      onComplete: onBackToAlbums
+    });
+  };
+
+  const handleRenameVideo = (video) => {
+    // Don't allow renaming if another video is being renamed or deleted
+    if (renamingVideoId || deletingVideoId) return;
+    
+    setEditingVideoId(video.id);
+    setEditingVideoName(video.title || `Video ${videos.findIndex(v => v.id === video.id) + 1}`);
+    setOpenVideoDropdownId(null);
+    setVideoBlurEnabled(false); // Disable blur temporarily
+
+    // Focus the input after state update and re-enable blur after a delay
+    setTimeout(() => {
+      const input = document.querySelector(`input[data-video-id="${video.id}"]`);
+      if (input) {
+        input.focus();
+        input.select();
+        // Re-enable blur after input is focused and stable
+        setTimeout(() => setVideoBlurEnabled(true), 200);
+      }
+    }, 0);
+  };
+
+  const handleSaveVideoName = async (videoId) => {
+    if (!editingVideoName.trim() || !album?.id) {
+      handleCancelVideoEdit();
+      return;
+    }
+
+    setRenamingVideoId(videoId);
+    setVideoBlurEnabled(false); // Keep input focused during API call
+    
+    try {
+      const token = authToken || await refreshToken();
+      if (!token) {
+        toast.error('Authentication failed. Please try again.');
+        return;
+      }
+
+      const response = await axios.patch(
+        `${baseURL}/album/${album.id}/video/${videoId}/rename`,
+        { newVideoName: editingVideoName.trim() },
+        {
+          withCredentials: true,
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      if (response.data.success) {
+        // Update the album data and videos from the response
+        setAlbumData(response.data.album);
+        
+        // Transform the updated videos
+        const transformedVideos = response.data.album.videos.map(video => ({
+          id: video._id || Math.random().toString(36),
+          path: video.videoPath,
+          title: video.name,
+          thumbnailPath: video.thumbnailPath
+        }));
+        setVideos(transformedVideos);
+        
+        toast.success('Video renamed successfully');
+        
+        // Update the selected video if it was the one being renamed
+        if (selectedVideo?.id === videoId) {
+          const updatedVideo = transformedVideos.find(v => v.id === videoId);
+          if (updatedVideo) {
+            setSelectedVideo(updatedVideo);
+          }
+        }
+      } else {
+        toast.error('Failed to rename video');
+      }
+    } catch (err) {
+      console.error('Error renaming video:', err);
+      toast.error('Failed to rename video. Please try again.');
+    } finally {
+      setRenamingVideoId(null);
+      setEditingVideoId(null);
+      setEditingVideoName('');
+      setVideoBlurEnabled(true);
+    }
+  };
+
+  const handleCancelVideoEdit = () => {
+    setEditingVideoId(null);
+    setEditingVideoName('');
+    setVideoBlurEnabled(true);
+  };
+
+  const handleVideoClick = (video, index) => {
+    setSelectedVideo(video);
+    setCurrentVideoIndex(index);
+    setShowVideoPlayer(true);
+  };
+
+  const handleVideoChange = (newIndex) => {
+    if (newIndex >= 0 && newIndex < videos.length) {
+      setCurrentVideoIndex(newIndex);
+      setSelectedVideo(videos[newIndex]);
+    }
+  };
+
+  if (!isOpen || !album) return null;
+
+  return (
+    <>
+      <OpenPlayVideo
+        isOpen={showVideoPlayer}
+        video={selectedVideo}
+        onClose={() => setShowVideoPlayer(false)}
+        playlist={videos}
+        currentIndex={currentVideoIndex}
+        onVideoChange={handleVideoChange}
+        autoPlay={true}
+        showPlaylist={videos.length > 1}
+      />
+      <div ref={contentRef} className="w-full h-full">
+      {/* Header */}
+      <div className="sticky top-0 z-10 flex items-center justify-between border-b border-blue-900/40 bg-gradient-to-r from-[#001138]/90 to-[#0c1d43]/90 backdrop-blur-md p-4 sm:p-5">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleBackToAlbums}
+            className="rounded-full p-1.5 bg-blue-900/30 hover:bg-blue-800/50 text-gray-200 hover:text-white transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/50 hover:cursor-pointer"
+            aria-label="Back to Albums"
+          >
+            <ChevronLeft size={20} />
+          </button>
+          <h2 className="text-xl font-medium text-white tracking-tight truncate">
+            {albumData?.name || album?.albumName || "Album"}
+          </h2>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="hidden sm:flex items-center gap-2">
+            <div className="py-2 px-3 bg-blue-900/30 text-xs font-medium text-blue-200 rounded-full">
+              {videos.length} {videos.length === 1 ? 'video' : 'videos'}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-full p-2 bg-blue-900/30 hover:bg-blue-800/50 hover:bg-opacity-70 text-gray-200 hover:text-white transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/50 hover:cursor-pointer"
+            aria-label="Close"
+          >
+            <X size={18} />
+          </button>
+        </div>
+      </div>
+
+      {/* Videos Content */}
+      <div className="p-4 sm:p-6">
+        {/* Loading State */}
+        {loading && (
+          <div className="flex items-center justify-center py-12">
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+              <p className="text-gray-400 text-sm">Loading videos...</p>
+            </div>
+          </div>
+        )}
+
+        {/* Error State */}
+        {error && !loading && (
+          <div className="flex items-center justify-center py-12">
+            <div className="flex flex-col items-center gap-3 text-center">
+              <div className="w-12 h-12 rounded-full bg-red-900/30 flex items-center justify-center">
+                <X className="w-6 h-6 text-red-400" />
+              </div>
+              <p className="text-red-400 font-medium">Error loading videos</p>
+              <p className="text-gray-400 text-sm">{error}</p>
+              <button
+                onClick={fetchAlbumVideos}
+                className="mt-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors"
+              >
+                Try Again
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Videos Grid */}
+        {!loading && !error && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+          {videos.map((video, index) => (
+            <div
+              key={video.id || index}
+              className={`album-card aspect-video relative overflow-hidden rounded-lg border border-blue-900/30 hover:border-blue-400/50 transition-all duration-300 group cursor-pointer ${(deletingVideoId === video.id || renamingVideoId === video.id) ? 'opacity-50 pointer-events-none' : ''}`}
+              style={{ animationDelay: `${index * 0.05}s` }}
+              onMouseEnter={() => (deletingVideoId !== video.id && renamingVideoId !== video.id) && setHoveredVideoId(video.id)}
+              onMouseLeave={() => setHoveredVideoId(null)}
+              onClick={() => (deletingVideoId !== video.id && renamingVideoId !== video.id) && handleVideoClick(video, index)}
+            >
+              {video.thumbnailPath ? (
+                <img
+                  className="absolute inset-0 w-full h-full object-cover"
+                  src={video.thumbnailPath}
+                  alt={video.title || `Video ${index + 1}`}
+                  onError={(e) => {
+                    // Fallback to video if thumbnail fails
+                    if (video.path) {
+                      const videoEl = document.createElement('video');
+                      videoEl.className = "absolute inset-0 w-full h-full object-cover";
+                      videoEl.src = video.path;
+                      videoEl.poster = "/placeholder-image.jpg";
+                      videoEl.muted = true;
+                      videoEl.onmouseover = (evt) => evt.currentTarget.play();
+                      videoEl.onmouseout = (evt) => {
+                        evt.currentTarget.pause();
+                        evt.currentTarget.currentTime = 0;
+                      };
+                      e.target.replaceWith(videoEl);
+                    } else {
+                      // Show placeholder
+                      const div = document.createElement('div');
+                      div.className = `absolute inset-0 w-full h-full placeholder-${(index % 4) + 1} flex items-center justify-center`;
+                      div.innerHTML = `<div class="text-4xl text-white/60 font-bold">${index + 1}</div>`;
+                      e.target.replaceWith(div);
+                    }
+                  }}
+                />
+              ) : video.path ? (
+                <video
+                  className="absolute inset-0 w-full h-full object-cover"
+                  src={video.path}
+                  poster="/placeholder-image.jpg"
+                  muted
+                  onMouseOver={(e) => e.currentTarget.play()}
+                  onMouseOut={(e) => {
+                    e.currentTarget.pause();
+                    e.currentTarget.currentTime = 0;
+                  }}
+                />
+              ) : null}
+
+              {/* Glass overlay on hover */}
+              <div className={`absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent transition-opacity flex flex-col justify-end p-4 ${hoveredVideoId === video.id || openVideoDropdownId === video.id ? 'opacity-100' : 'opacity-0'
+                }`}>
+                <div className="flex items-center justify-between">
+                  {editingVideoId === video.id ? (
+                    <div className="flex items-center flex-1 mr-2">
+                      <input
+                        type="text"
+                        value={editingVideoName}
+                        onChange={(e) => setEditingVideoName(e.target.value)}
+                        onBlur={() => {
+                          if (videoBlurEnabled && renamingVideoId !== video.id) {
+                            handleSaveVideoName(video.id);
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && renamingVideoId !== video.id) {
+                            handleSaveVideoName(video.id);
+                          } else if (e.key === 'Escape' && renamingVideoId !== video.id) {
+                            handleCancelVideoEdit();
+                          }
+                        }}
+                        className={`text-sm font-medium text-white bg-blue-900/30 border border-blue-400 rounded px-0.5 flex-1 focus:outline-none focus:border-blue-300 focus:bg-blue-900/40 relative z-[70] ${renamingVideoId === video.id ? 'opacity-50 pointer-events-none' : ''}`}
+                        data-video-id={video.id}
+                        disabled={renamingVideoId === video.id}
+                        autoFocus
+                      />
+                      {renamingVideoId === video.id && (
+                        <div className="ml-2 w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-sm font-medium text-white truncate flex-1 mr-2">
+                      {video.title || `Video ${index + 1}`}
+                    </p>
+                  )}
+                  <DropdownMenu onOpenChange={(open) => setOpenVideoDropdownId(open ? video.id : null)}>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        className={`transition-opacity duration-200 p-1 z-50 hover:cursor-pointer bg-black/50 rounded flex-shrink-0 ${hoveredVideoId === video.id || openVideoDropdownId === video.id ? 'opacity-100' : 'opacity-0'
+                          }`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                      >
+                        <MoreVertical className='text-gray-300 hover:text-white transition-colors' size={12} />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      align="end"
+                      className="bg-[#1A1F37] border-blue-900/30 shadow-lg min-w-[160px] w-fit z-[60]"
+                      sideOffset={5}
+                    >
+                      <DropdownMenuItem
+                        className={`group text-gray-300 hover:!text-white hover:!bg-blue-900/30 focus:!bg-blue-900/30 focus:!text-white cursor-pointer ${renamingVideoId === video.id ? 'opacity-50 pointer-events-none' : ''}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (renamingVideoId !== video.id) {
+                            handleRenameVideo(video);
+                          }
+                        }}
+                      >
+                        {renamingVideoId === video.id ? (
+                          <>
+                            <div className="mr-2 h-4 w-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                            Renaming...
+                          </>
+                        ) : (
+                          <>
+                            <Edit3 className="mr-2 h-4 w-4 text-gray-300 group-hover:!text-white" />
+                            Rename
+                          </>
+                        )}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className={`text-red-400 hover:!text-red-400 hover:!bg-red-900/30 cursor-pointer ${deletingVideoId === video.id ? 'opacity-50 pointer-events-none' : ''}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteVideo(video);
+                        }}
+                      >
+                        {deletingVideoId === video.id ? (
+                          <>
+                            <div className="mr-2 h-4 w-4 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
+                            Deleting...
+                          </>
+                        ) : (
+                          <>
+                            <Trash2 className="mr-2 h-4 w-4 text-red-400" />
+                            Delete
+                          </>
+                        )}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </div>
+
+              {/* Delete loading overlay */}
+              {deletingVideoId === video.id && (
+                <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-50">
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="w-8 h-8 border-2 border-red-400 border-t-transparent rounded-full animate-spin"></div>
+                    <p className="text-white text-sm font-medium">Deleting video...</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Rename loading overlay */}
+              {renamingVideoId === video.id && (
+                <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-50">
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                    <p className="text-white text-sm font-medium">Renaming video...</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+          </div>
+        )}
+      </div>
+    </div>
+    </>
+  );
+};
+
+export default OpenAlbumOverlay;

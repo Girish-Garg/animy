@@ -9,6 +9,11 @@ export const createChat = async (req, res) => {
   try {
     const user = req.user;
     const title = req.validatedData?.body?.title || 'New Chat';
+    const prompt = req.validatedData?.body?.prompt;
+
+    if (!prompt) {
+      return res.status(400).json({ success: false, error: 'prompt is required' });
+    }
     
     const userWithChats = await User.findById(user._id).populate({
       path: 'chatIds',
@@ -48,11 +53,35 @@ export const createChat = async (req, res) => {
       { $push: { chatIds: newChat._id } 
     });
 
+    const GenerateResponse = await axios.post(`${process.env.Video_API_BASE_URL}/video/generate`, {
+      prompt,
+      userId: user._id,
+      chatId: newChat._id,
+      filename : 'video'
+    });
+
+    if (!GenerateResponse.data.success) {
+      return res.status(500).json({ success: false, error: 'Failed to generate video' });
+    }
+
+    const newPrompt = await Prompt.create({
+      chatId: newChat._id,
+      prompt,
+      status: "processing"
+    });
+
+    await Chat.findByIdAndUpdate(newChat._id, {
+      $push: { prompts: newPrompt },
+      $set: { lastUpdated: new Date() }
+    });
+
     res.status(201).json({
       type: isDeleted ? "chat_replaced" : "success",
       message: "Chat created successfully",
       chat: newChat,
+      promptId: newPrompt._id
     });
+    
   } catch (err) {
     console.error('Error in createChat controller:', err);
     return res.status(500).json({ success: false, error: 'Internal Server Error' });

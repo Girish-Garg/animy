@@ -41,7 +41,7 @@ function AppContent() {
             <Route path="billing" element={<BillingPage />} />
             <Route path="profile" element={<ProfilePage />} />
           </Route>
-          <Route path="/chat" element={<ChatSideBar />} />
+          <Route path="/chat/*" element={<ChatSideBar />} />
         </Routes>
       </main>
     </div>
