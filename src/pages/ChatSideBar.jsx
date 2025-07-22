@@ -112,17 +112,73 @@ export default function Layout() {
     }
   };
   
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!inputValue.trim()) return;
     
-    console.log('Submitted:', inputValue);
-    setInputValue('');
+    try {
+      const token = authToken || await refreshToken();
+      if (!token) {
+        console.error('No auth token available');
+        return;
+      }
+      
+      // If we're in an active chat, send message to existing chat
+      if (activeChat) {
+        // TODO: Implement sending message to existing chat
+        console.log('Sending message to existing chat:', inputValue);
+        setInputValue('');
+        return;
+      }
+      
+      // If no active chat, create new chat with the prompt
+      const response = await axios.post(`${baseURL}/chat`, {
+        prompt: inputValue.trim(),
+        title: inputValue.trim().slice(0, 50) // Use first 50 chars as title
+      }, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      
+      const data = response.data;
+      
+      if (data.type === "chat_replaced" || data.type === "success") {
+        // Refresh the chats list to show the new/updated chat
+        await fetchChats();
+        
+        // Set the new chat as active and redirect
+        setActiveChat(data.chat._id);
+        setActivePage('chat');
+        localStorage.setItem('animy_last_chat', data.chat._id);
+        navigate(`/chat/chat?id=${data.chat._id}`);
+        
+        // Fetch the chat data to show the new prompt and response
+        fetchChatData(data.chat._id);
+        
+        // Start polling for video generation status
+        if (data.promptId) {
+          startPolling(data.chat._id, data.promptId);
+        }
+        
+        // Clear the input
+        setInputValue('');
+        
+        console.log('New chat created successfully:', data.chat._id);
+      } else {
+        console.error('Failed to create new chat:', data.message);
+      }
+    } catch (error) {
+      console.error('Error creating new chat:', error);
+    }
   };
   const [chatItems, setChatItems] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [currentChatData, setCurrentChatData] = useState(null);
   const [isChatLoading, setIsChatLoading] = useState(false);
+  const [pollingInterval, setPollingInterval] = useState(null);
+  const [generatingPromptId, setGeneratingPromptId] = useState(null);
+  const [generatingMessage, setGeneratingMessage] = useState('');
 
   // Function to fetch chats from API
   const fetchChats = async () => {
@@ -187,6 +243,94 @@ export default function Layout() {
       setIsChatLoading(false);
     }
   };
+
+  // Function to poll prompt status
+  const pollPromptStatus = async (chatId, promptId) => {
+    try {
+      const token = authToken || await refreshToken();
+      if (!token) {
+        console.error('No auth token available for polling');
+        return;
+      }
+
+      const response = await axios.get(`${baseURL}/chat/${chatId}/prompt/${promptId}`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      const data = response.data;
+      
+      if (data.success) {
+        if (data.status === 'success' && data.video) {
+          // Video generation completed successfully
+          console.log('Video generation completed:', data.video);
+          
+          // Stop polling
+          if (pollingInterval) {
+            clearInterval(pollingInterval);
+            setPollingInterval(null);
+          }
+          setGeneratingPromptId(null);
+          setGeneratingMessage('');
+          
+          // Refresh chat data to show the new video
+          fetchChatData(chatId);
+        } else if (data.status === 'failed') {
+          // Video generation failed
+          console.error('Video generation failed:', data.message);
+          
+          // Stop polling
+          if (pollingInterval) {
+            clearInterval(pollingInterval);
+            setPollingInterval(null);
+          }
+          setGeneratingPromptId(null);
+          setGeneratingMessage('');
+          
+          // Refresh chat data to show error state
+          fetchChatData(chatId);
+        } else {
+          // Still processing, continue polling
+          console.log('Video still generating:', data.message || 'Processing...');
+          // Update the generating message
+          setGeneratingMessage(data.message || 'Processing your video...');
+        }
+      }
+    } catch (error) {
+      console.error('Error polling prompt status:', error);
+    }
+  };
+
+  // Start polling for prompt status
+  const startPolling = (chatId, promptId) => {
+    setGeneratingPromptId(promptId);
+    setGeneratingMessage('Starting video generation...');
+    
+    // Clear any existing polling
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+    }
+    
+    // Start new polling interval
+    const intervalId = setInterval(() => {
+      pollPromptStatus(chatId, promptId);
+    }, 25000); // Poll every 25 seconds
+    
+    setPollingInterval(intervalId);
+    
+    // Also poll immediately
+    pollPromptStatus(chatId, promptId);
+  };
+
+  // Cleanup polling on component unmount
+  useEffect(() => {
+    return () => {
+      if (pollingInterval) {
+        clearInterval(pollingInterval);
+      }
+    };
+  }, [pollingInterval]);
   useEffect(() => {
     const path = location.pathname.replace(/^\//, '') || 'dashboard';
     setActivePage(path);
@@ -229,7 +373,7 @@ export default function Layout() {
   ];
 const renderMenuItem = (item) => {
     const { key, label, icon: Icon } = item;
-    const isActive = activePage === key;
+    const isActive = activePage === key || (key === 'New Chat' && activePage === 'chat' && !activeChat);
     
     return (
       <SidebarMenuItem className="my-1" key={key}>
@@ -248,7 +392,11 @@ const renderMenuItem = (item) => {
               setAlbumOverlayOpen(true);
               setActivePage(key);
             } else if (key === 'New Chat') {
-              // handleNewChat();
+              // Navigate to new chat route
+              setActiveChat(null);
+              setCurrentChatData(null);
+              setActivePage('chat');
+              navigate('/chat');
             } else {
               navigate(`/${key}`);
               setActiveChat(null);
@@ -294,41 +442,6 @@ const renderMenuItem = (item) => {
     
     console.log(`Opening chat ${chatId}`);
   };
-  const handleNewChat = async () => {
-    try {
-      const token = authToken || await refreshToken();
-      if (!token) {
-        console.error('No auth token available');
-        return;
-      }
-      
-      const response = await axios.post(`${baseURL}/chat`, {
-        title: 'New Chat'
-      }, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
-      
-      const data = response.data;
-      
-      if (data.success) {
-        // Refresh the chats list
-        await fetchChats();
-        
-        // Set the new chat as active
-        setActiveChat(data.chat._id);
-        setActivePage('chat');
-        localStorage.setItem('animy_last_chat', data.chat._id);
-        navigate(`/chat/chat?id=${data.chat._id}`);
-      } else {
-        console.error('Failed to create new chat:', data.message);
-      }
-    } catch (error) {
-      console.error('Error creating new chat:', error);
-    }
-  };
-
   const handleChatRename = (chat) => {
     setEditingChatId(chat.id);
     setEditingChatName(chat.title);
@@ -410,7 +523,7 @@ const renderMenuItem = (item) => {
       const data = response.data;
       
       if (data.success) {
-        // Remove the chat from local state
+
         setChatItems(prevChatItems => prevChatItems.filter(item => item.id !== chat.id));
         
         // If we're deleting the active chat, clear the active chat
@@ -634,7 +747,7 @@ const renderMenuItem = (item) => {
                               </div>
                               
                               {/* Video Response */}
-                              {prompt.video && (
+                              {prompt.video ? (
                                 <div className="flex justify-center">
                                   <div className="w-[80%] rounded-2xl rounded-tr-md p-3">
                                     <div className="relative aspect-video rounded-xl overflow-hidden bg-black">
@@ -650,7 +763,22 @@ const renderMenuItem = (item) => {
                                     </div>
                                   </div>
                                 </div>
-                              )}
+                              ) : generatingPromptId === prompt._id ? (
+                                <div className="flex justify-center">
+                                  <div className="w-[80%] rounded-2xl rounded-tr-md p-3">
+                                    <div className="relative aspect-video rounded-xl overflow-hidden bg-gradient-to-r from-blue-900/20 via-blue-600/30 to-blue-900/20 animate-pulse">
+                                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent animate-shimmer"></div>
+                                      <div className="flex items-center justify-center h-full">
+                                        <div className="text-center">
+                                          <div className="w-12 h-12 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin mx-auto mb-4"></div>
+                                          <p className="text-white text-lg font-medium">{generatingMessage || 'Generating your video...'}</p>
+                                          <p className="text-blue-200 text-sm mt-2">This may take a few moments</p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : null}
                             </div>
                           ))}
                         </div>

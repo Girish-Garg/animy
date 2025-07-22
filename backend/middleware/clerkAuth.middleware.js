@@ -9,6 +9,9 @@ const clerkAuthMiddleware = async (req, res, next) => {
         if (!authResult.userId) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
+        console.log(`Clerk auth result: ${JSON.stringify(authResult)}`);
+        console.log(`Authenticated user ID: ${authResult.userId}`);
+
         const clerkUser = await clerkClient.users.getUser(authResult.userId);
         const email = clerkUser.emailAddresses[0]?.emailAddress;
 

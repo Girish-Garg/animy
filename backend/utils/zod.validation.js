@@ -31,7 +31,10 @@ export const createChatSchema = z.object({
       .max(100, 'Title must be less than 100 characters')
       .trim()
       .optional(),
-  }).optional(),
+    prompt: z.string()
+      .min(1, 'Prompt is required')
+      .trim(),
+  }),
 });
 
 export const updateChatTitleSchema = z.object({
