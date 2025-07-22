@@ -1,15 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, ChevronLeft, MoreVertical, Edit3, Trash2 } from 'lucide-react';
+import { X, ChevronLeft, MoreVertical, Edit3, Trash2, Download } from 'lucide-react';
 import gsap from 'gsap';
-import axios from 'axios';
-const baseURL = import.meta.env.VITE_BACKEND_URL;
+import { apiUtils } from '@/lib/apiClient';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useAuth } from '@clerk/clerk-react';
 import { toast } from 'sonner';
 import OpenPlayVideo from './OpenPlayVideo';
 
@@ -34,36 +32,6 @@ const OpenAlbumOverlay = ({
   const [error, setError] = useState(null);
   const [deletingVideoId, setDeletingVideoId] = useState(null);
   const [renamingVideoId, setRenamingVideoId] = useState(null);
-  const [authToken, setAuthToken] = useState(null);
-
-  const { getToken } = useAuth();
-
-  // Initialize token when component opens
-  useEffect(() => {
-    const initializeToken = async () => {
-      try {
-        const token = await getToken();
-        setAuthToken(token);
-      } catch (error) {
-        console.error('Failed to get auth token:', error);
-      }
-    };
-    if (isOpen) {
-      initializeToken();
-    }
-  }, [isOpen, getToken]);
-
-  // Function to refresh token when needed
-  const refreshToken = async () => {
-    try {
-      const token = await getToken();
-      setAuthToken(token);
-      return token;
-    } catch (error) {
-      console.error('Failed to refresh auth token:', error);
-      return null;
-    }
-  };
 
   // Function to fetch album details and videos
   const fetchAlbumVideos = async () => {
@@ -73,18 +41,7 @@ const OpenAlbumOverlay = ({
     setError(null);
     
     try {
-      const token = authToken || await refreshToken();
-      if (!token) {
-        setError('Authentication failed. Please try again.');
-        return;
-      }
-
-      const response = await axios.get(`${baseURL}/album/${album.id}`, {
-        withCredentials: true,
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
+      const response = await apiUtils.get(`/album/${album.id}`);
 
       if (response.data.success) {
         setAlbumData(response.data.album);
@@ -116,18 +73,7 @@ const OpenAlbumOverlay = ({
     setDeletingVideoId(video.id);
     
     try {
-      const token = authToken || await refreshToken();
-      if (!token) {
-        toast.error('Authentication failed. Please try again.');
-        return;
-      }
-
-      const response = await axios.delete(`${baseURL}/album/${album.id}/video/${video.id}`, {
-        withCredentials: true,
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
+      const response = await apiUtils.delete(`/album/${album.id}/video/${video.id}`);
 
       if (response.data.success) {
         // Update the album data and videos from the response
@@ -238,63 +184,67 @@ const OpenAlbumOverlay = ({
   };
 
   const handleSaveVideoName = async (videoId) => {
-    if (!editingVideoName.trim() || !album?.id) {
-      handleCancelVideoEdit();
-      return;
-    }
-
-    setRenamingVideoId(videoId);
-    setVideoBlurEnabled(false); // Keep input focused during API call
-    
-    try {
-      const token = authToken || await refreshToken();
-      if (!token) {
-        toast.error('Authentication failed. Please try again.');
-        return;
-      }
-
-      const response = await axios.patch(
-        `${baseURL}/album/${album.id}/video/${videoId}/rename`,
-        { newVideoName: editingVideoName.trim() },
-        {
-          withCredentials: true,
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        }
+    if (editingVideoName.trim()) {
+      // Set loading state for this specific video
+      setRenamingVideoId(videoId);
+      
+      // Optimistic update - update UI immediately
+      const originalVideos = [...videos];
+      const optimisticVideos = videos.map(video => 
+        video.id === videoId 
+          ? { ...video, title: editingVideoName.trim() }
+          : video
       );
+      setVideos(optimisticVideos);
+      
+      // Exit editing mode immediately for better UX
+      setEditingVideoId(null);
+      setEditingVideoName('');
+      setVideoBlurEnabled(true);
+      
+      try {
+        const response = await apiUtils.patch(
+          `/album/${album.id}/video/${videoId}/rename`,
+          { newVideoName: editingVideoName.trim() }
+        );
 
-      if (response.data.success) {
-        // Update the album data and videos from the response
-        setAlbumData(response.data.album);
-        
-        // Transform the updated videos
-        const transformedVideos = response.data.album.videos.map(video => ({
-          id: video._id || Math.random().toString(36),
-          path: video.videoPath,
-          title: video.name,
-          thumbnailPath: video.thumbnailPath
-        }));
-        setVideos(transformedVideos);
-        
-        toast.success('Video renamed successfully');
-        
-        // Update the selected video if it was the one being renamed
-        if (selectedVideo?.id === videoId) {
-          const updatedVideo = transformedVideos.find(v => v.id === videoId);
-          if (updatedVideo) {
-            setSelectedVideo(updatedVideo);
+        if (response.data.success) {
+          // Update the album data and videos from the response
+          setAlbumData(response.data.album);
+          
+          // Transform the updated videos
+          const transformedVideos = response.data.album.videos.map(video => ({
+            id: video._id || Math.random().toString(36),
+            path: video.videoPath,
+            title: video.name,
+            thumbnailPath: video.thumbnailPath
+          }));
+          setVideos(transformedVideos);
+          
+          toast.success('Video renamed successfully');
+          
+          // Update the selected video if it was the one being renamed
+          if (selectedVideo?.id === videoId) {
+            const updatedVideo = transformedVideos.find(v => v.id === videoId);
+            if (updatedVideo) {
+              setSelectedVideo(updatedVideo);
+            }
           }
+        } else {
+          // Revert optimistic update on failure
+          setVideos(originalVideos);
+          toast.error('Failed to rename video');
         }
-      } else {
-        toast.error('Failed to rename video');
+      } catch (err) {
+        // Revert optimistic update on error
+        setVideos(originalVideos);
+        console.error('Error renaming video:', err);
+        toast.error('Failed to rename video. Please try again.');
+      } finally {
+        setRenamingVideoId(null);
       }
-    } catch (err) {
-      console.error('Error renaming video:', err);
-      toast.error('Failed to rename video. Please try again.');
-    } finally {
-      setRenamingVideoId(null);
+    } else {
+      // Just exit editing mode if name is empty
       setEditingVideoId(null);
       setEditingVideoName('');
       setVideoBlurEnabled(true);
@@ -305,6 +255,33 @@ const OpenAlbumOverlay = ({
     setEditingVideoId(null);
     setEditingVideoName('');
     setVideoBlurEnabled(true);
+  };
+
+  const handleDownloadVideo = async (video) => {
+    if (!video?.path) {
+      toast.error('Video file not available for download');
+      return;
+    }
+
+    try {
+      // Create a temporary anchor element to trigger download
+      const link = document.createElement('a');
+      link.href = video.path;
+      link.download = `${video.title || 'video'}.mp4`; // Default to .mp4 extension
+      link.target = '_blank';
+      
+      // Append to body temporarily
+      document.body.appendChild(link);
+      link.click();
+      
+      // Clean up
+      document.body.removeChild(link);
+      
+      toast.success('Download started!');
+    } catch (err) {
+      console.error('Error downloading video:', err);
+      toast.error('Failed to download video. Please try again.');
+    }
   };
 
   const handleVideoClick = (video, index) => {
@@ -456,27 +433,37 @@ const OpenAlbumOverlay = ({
                 }`}>
                 <div className="flex items-center justify-between">
                   {editingVideoId === video.id ? (
-                    <div className="flex items-center flex-1 mr-2">
+                    <div 
+                      className="flex items-center flex-1 mr-2"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
+                    >
                       <input
                         type="text"
                         value={editingVideoName}
                         onChange={(e) => setEditingVideoName(e.target.value)}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
                         onBlur={() => {
-                          if (videoBlurEnabled && renamingVideoId !== video.id) {
+                          if (videoBlurEnabled) {
                             handleSaveVideoName(video.id);
                           }
                         }}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter' && renamingVideoId !== video.id) {
+                          if (e.key === 'Enter') {
                             handleSaveVideoName(video.id);
-                          } else if (e.key === 'Escape' && renamingVideoId !== video.id) {
+                          } else if (e.key === 'Escape') {
                             handleCancelVideoEdit();
                           }
                         }}
-                        className={`text-sm font-medium text-white bg-blue-900/30 border border-blue-400 rounded px-0.5 flex-1 focus:outline-none focus:border-blue-300 focus:bg-blue-900/40 relative z-[70] ${renamingVideoId === video.id ? 'opacity-50 pointer-events-none' : ''}`}
+                        className="text-sm font-medium text-white bg-blue-900/30 border border-blue-400 rounded px-0.5 flex-1 focus:outline-none focus:border-blue-300 focus:bg-blue-900/40 relative z-[70]"
                         data-video-id={video.id}
-                        disabled={renamingVideoId === video.id}
                         autoFocus
+                        maxLength={50}
                       />
                       {renamingVideoId === video.id && (
                         <div className="ml-2 w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
@@ -525,6 +512,16 @@ const OpenAlbumOverlay = ({
                             Rename
                           </>
                         )}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="group text-gray-300 hover:!text-white hover:!bg-green-900/30 focus:!bg-green-900/30 focus:!text-white cursor-pointer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDownloadVideo(video);
+                        }}
+                      >
+                        <Download className="mr-2 h-4 w-4 text-gray-300 group-hover:!text-white" />
+                        Download
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         className={`text-red-400 hover:!text-red-400 hover:!bg-red-900/30 cursor-pointer ${deletingVideoId === video.id ? 'opacity-50 pointer-events-none' : ''}`}

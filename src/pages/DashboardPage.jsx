@@ -1,16 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import { useUser, useAuth } from '@clerk/clerk-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useUser } from '@clerk/clerk-react';
+import { useNavigate } from 'react-router-dom';
 import { CircularProgressbar, buildStyles } from 'react-circular-progressbar';
 import 'react-circular-progressbar/dist/styles.css';
 import { Send, ArrowRight, ChevronRight, Plus } from 'lucide-react';
 import AlbumOverlay from '../components/AlbumOverlay';
-import axios from 'axios';
-
-const baseURL = import.meta.env.VITE_BACKEND_URL;
+import { apiUtils } from '@/lib/apiClient';
 
 export default function DashboardPage() {
   const { user } = useUser();
-  const { getToken } = useAuth();
+  const navigate = useNavigate();
   const [dashboardData, setDashboardData] = useState({
     chats: [],
     albums: []
@@ -19,51 +18,89 @@ export default function DashboardPage() {
   const [inputValue, setInputValue] = useState('');
   const [albumOverlayOpen, setAlbumOverlayOpen] = useState(false);
   const [selectedAlbumId, setSelectedAlbumId] = useState(null);
-  const [authToken, setAuthToken] = useState(null);
+  
+  // Throttling states
+  const [isThrottled, setIsThrottled] = useState(false);
+  const [throttleTimeRemaining, setThrottleTimeRemaining] = useState(0);
+  const [isCreatingNewChat, setIsCreatingNewChat] = useState(false);
+  const throttleIntervalRef = useRef(null);
 
-  // Initialize token on component mount
-  useEffect(() => {
-    const initializeToken = async () => {
-      try {
-        const token = await getToken();
-        setAuthToken(token);
-      } catch (error) {
-        console.error('Failed to get auth token:', error);
+  // Throttling constants
+  const THROTTLE_DURATION = 10 * 60 * 1000; // 10 minutes in milliseconds
+  const THROTTLE_STORAGE_KEY = 'animy_last_prompt_time';
+
+  // Check if user is currently throttled
+  const checkThrottleStatus = () => {
+    const lastPromptTime = localStorage.getItem(THROTTLE_STORAGE_KEY);
+    if (lastPromptTime) {
+      const timeSinceLastPrompt = Date.now() - parseInt(lastPromptTime);
+      const timeRemaining = THROTTLE_DURATION - timeSinceLastPrompt;
+      
+      if (timeRemaining > 0) {
+        setIsThrottled(true);
+        setThrottleTimeRemaining(Math.ceil(timeRemaining / 1000)); // Convert to seconds
+        startThrottleTimer(timeRemaining);
+        return true;
       }
-    };
-    if (user) {
-      initializeToken();
     }
-  }, [getToken, user]);
+    setIsThrottled(false);
+    setThrottleTimeRemaining(0);
+    return false;
+  };
 
-  // Function to refresh token when needed
-  const refreshToken = async () => {
-    try {
-      const token = await getToken();
-      setAuthToken(token);
-      return token;
-    } catch (error) {
-      console.error('Failed to refresh auth token:', error);
-      return null;
+  // Start the throttle countdown timer
+  const startThrottleTimer = (initialTime) => {
+    if (throttleIntervalRef.current) {
+      clearInterval(throttleIntervalRef.current);
     }
+
+    throttleIntervalRef.current = setInterval(() => {
+      setThrottleTimeRemaining(prev => {
+        const newTime = prev - 1;
+        if (newTime <= 0) {
+          setIsThrottled(false);
+          setThrottleTimeRemaining(0);
+          clearInterval(throttleIntervalRef.current);
+          throttleIntervalRef.current = null;
+          localStorage.removeItem(THROTTLE_STORAGE_KEY);
+          
+          // Dispatch custom event to notify other components throttling ended
+          window.dispatchEvent(new CustomEvent('throttleStatusChanged', { 
+            detail: { throttled: false, timestamp: Date.now() } 
+          }));
+          
+          return 0;
+        }
+        return newTime;
+      });
+    }, 1000);
+  };
+
+  // Apply throttle after sending a prompt
+  const applyThrottle = () => {
+    const currentTime = Date.now();
+    localStorage.setItem(THROTTLE_STORAGE_KEY, currentTime.toString());
+    setIsThrottled(true);
+    setThrottleTimeRemaining(THROTTLE_DURATION / 1000); // Convert to seconds
+    startThrottleTimer(THROTTLE_DURATION);
+    
+    // Dispatch custom event to notify other components
+    window.dispatchEvent(new CustomEvent('throttleStatusChanged', { 
+      detail: { throttled: true, timestamp: currentTime } 
+    }));
+  };
+
+  // Format time remaining for display
+  const formatTimeRemaining = (seconds) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
   
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
-        const token = authToken || await refreshToken();
-        if (!token) {
-          console.error('No auth token available');
-          setLoading(false);
-          return;
-        }
-        
-        const response = await axios.get(`${baseURL}/dashboard`, {
-          withCredentials: true,
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        });
+        const response = await apiUtils.get('/dashboard');
         
         if (response.data.success) {
           setDashboardData({
@@ -73,43 +110,116 @@ export default function DashboardPage() {
         }
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
-        // If unauthorized, try refreshing token
-        if (error.response?.status === 401) {
-          await refreshToken();
-        }
         // Keep empty state on error
       } finally {
         setLoading(false);
       }
     };
 
-    // Only start loading when user and token are available
-    if (user && authToken) {
+    // Only start loading when user is available
+    if (user) {
       setLoading(true);
       fetchDashboardData();
     }
-    // If no user or token, keep loading state until both are available
-  }, [user, authToken]);
+  }, [user]);
 
-  // Handle authentication timeout
+  // Check throttle status on component mount and when window gains focus
   useEffect(() => {
-    const authTimeout = setTimeout(() => {
-      if (!user && loading) {
-        setLoading(false);
+    checkThrottleStatus();
+    
+    // Add event listeners for window focus and visibility change
+    const handleFocus = () => {
+      checkThrottleStatus();
+    };
+    
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        checkThrottleStatus();
       }
-    }, 5000); // Wait 5 seconds for authentication
+    };
+    
+    // Listen for storage changes to sync throttling across tabs/components
+    const handleStorageChange = (e) => {
+      if (e.key === THROTTLE_STORAGE_KEY) {
+        checkThrottleStatus();
+      }
+    };
+    
+    // Listen for custom throttle events from other components
+    const handleThrottleChange = () => {
+      checkThrottleStatus();
+    };
+    
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('throttleStatusChanged', handleThrottleChange);
+    
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('throttleStatusChanged', handleThrottleChange);
+    };
+  }, []);
 
-    return () => clearTimeout(authTimeout);
-  }, [user, loading]);
+  // Cleanup on component unmount
+  useEffect(() => {
+    return () => {
+      if (throttleIntervalRef.current) {
+        clearInterval(throttleIntervalRef.current);
+        throttleIntervalRef.current = null;
+      }
+    };
+  }, []);
 
   const percentage = 90;
   
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!inputValue.trim()) return;
-    console.log('Processing input:', inputValue);
     
-    setInputValue('');
+    // Check if user is throttled
+    if (isThrottled) {
+      return;
+    }
+    
+    try {
+      // Set creating new chat state
+      setIsCreatingNewChat(true);
+      
+      // Apply throttle before creating new chat
+      applyThrottle();
+      
+      const response = await apiUtils.post('/chat', {
+        prompt: inputValue.trim(),
+        title: inputValue.trim().slice(0, 50) // Use first 50 chars as title
+      });
+      
+      const data = response.data;
+      
+      if (data.type === "chat_replaced" || data.type === "success") {
+        // Clear the input first for immediate feedback
+        setInputValue('');
+        
+        // Navigate to the specific chat with prompt ID if available
+        const promptId = data.promptId;
+        if (promptId) {
+          setTimeout(() => {
+            navigate(`/chat/chat?id=${data.chat._id}&promptId=${promptId}`);
+          }, 100);
+        } else {
+          setTimeout(() => {
+            navigate(`/chat/chat?id=${data.chat._id}`);
+          }, 100);
+        }
+      }
+      
+      setIsCreatingNewChat(false);
+    } catch (error) {
+      console.error('Error creating new chat:', error);
+      setIsCreatingNewChat(false);
+    }
   };
 
   const handleAlbumClick = (albumId) => {
@@ -124,8 +234,8 @@ export default function DashboardPage() {
   };
 
   const handleChatClick = (chatId) => {
-    // Navigate to specific chat
-    window.location.href = `/chat?id=${chatId}`;
+    // Navigate to specific chat using navigate instead of window.location
+    navigate(`/chat/chat?id=${chatId}`);
   };
   
   // Get latest 3 albums and 3 chats
@@ -191,11 +301,11 @@ export default function DashboardPage() {
           <div className="flex flex-col items-start justify-between h-full relative z-10">
             <div className="flex flex-col items-start gap-1">
               <div className="text-gray-300">Welcome back,</div>
-              <h2 className="text-3xl font-bold text-white">{user?.firstName || 'First Name'} {user?.lastName || 'Last Name'}</h2>
+              <h2 className="text-3xl font-bold text-white">{user?.firstName || user?.emailAddresses?.[0]?.emailAddress} {user?.lastName || ''}</h2>
               <p className="mt-2 text-gray-300">Glad to see you again!<br/>What's next?</p>
             </div>
             <a 
-              href="/create" 
+              href="/chat"
               className="mt-auto text-sm flex items-center gap-1 text-blue-300 hover:text-blue-400 transition-colors group"
             >
               <span>Create a video scene</span>
@@ -267,32 +377,40 @@ export default function DashboardPage() {
 
       <div className="flex flex-col lg:flex-row gap-4 flex-grow lg:h-1/2">
         <div className="w-full min-h-[200px] lg:min-h-0 lg:w-1/3 p-6 bg-[#001138]/50 rounded-xl shadow-lg border border-blue-900/20 hover:border-blue-700/30 transition-all duration-300 h-full flex flex-col backdrop-blur-3xl">
-          <h2 className="text-xl font-medium mb-1">Quick Launch</h2>
-          <div className="flex items-center gap-2 text-sm text-gray-400 mb-2">
-            <span className="w-2 h-2 bg-green-400 rounded-full"></span>
-            <span>Quickly describe your video scene for generation</span>
-          </div>
-          <form onSubmit={handleSubmit} className="relative flex-grow flex flex-col justify-center">
-            <input
-              type="text"
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              className="w-full bg-[#131631] text-white border border-blue-900/30 rounded-full py-3 px-4 pr-12 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50"
-              placeholder="Describe your animation scene..."
-              aria-label="Scene description"
-            />
-            <button 
-              type="submit" 
-              className="absolute right-5 top-1/2 transform -translate-y-1/2 text-blue-500 hover:text-blue-600 hover:cursor-pointer transition-colors disabled:text-gray-600 disabled:cursor-not-allowed"
-              disabled={!inputValue.trim()}
-              aria-label="Submit"
-            >
-              <Send size={18} />
-            </button>
-          </form>
+          <h2 className="text-xl font-medium mb-4">Quick Launch</h2>
+
+          {isCreatingNewChat ? (
+            <div className="flex-grow flex items-center justify-center text-center">
+              <div>
+                <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                <p className="text-white text-sm font-medium">Creating your chat...</p>
+                <p className="text-blue-200 text-xs mt-1">Setting up your conversation</p>
+              </div>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="relative flex-grow flex flex-col justify-center">
+              <input
+                type="text"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                className="w-full bg-[#131631] text-white border border-blue-900/30 rounded-full py-3 px-4 pr-12 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                placeholder={isThrottled ? `Wait ${formatTimeRemaining(throttleTimeRemaining)}` : "Describe your animation scene..."}
+                aria-label="Scene description"
+                disabled={isThrottled}
+              />
+              <button 
+                type="submit" 
+                className="absolute right-5 top-1/2 transform -translate-y-1/2 text-blue-500 hover:text-blue-600 hover:cursor-pointer transition-colors disabled:text-gray-600 disabled:cursor-not-allowed"
+                disabled={!inputValue.trim() || isThrottled}
+                aria-label="Submit"
+              >
+                <Send size={18} />
+              </button>
+            </form>
+          )}
         </div>
         <div className="w-full min-h-[300px] lg:min-h-0 lg:w-1/3 p-6 bg-[#001138]/50 rounded-xl shadow-lg border border-blue-900/20 hover:border-blue-700/30 transition-all duration-300 h-full flex flex-col backdrop-blur-3xl">
-          <div className="flex justify-between items-center mb-1">
+          <div className="flex justify-between items-center mb-3">
             <h2 className="text-xl font-medium">Recent Albums</h2>            
             <button 
               onClick={() => setAlbumOverlayOpen(true)}
@@ -301,10 +419,6 @@ export default function DashboardPage() {
               <span>View All</span>
               <ChevronRight size={14} className="transition-transform group-hover:translate-x-0.5" />
             </button>
-          </div>
-          <div className="flex items-center gap-2 text-sm text-gray-400 mb-4">
-            <span className="w-2 h-2 bg-green-400 rounded-full"></span>
-            <span>All your recent video saves</span>
           </div>
 
           <div className={`flex-grow flex ${recentAlbums.length > 0 ? 'items-start' : 'items-center justify-center'}`}>
@@ -367,16 +481,12 @@ export default function DashboardPage() {
         </div>
 
         <div className="w-full mb-4 lg:mb-0 min-h-[300px] lg:min-h-0 lg:w-1/3 p-6 bg-[#001138]/50 rounded-xl shadow-lg border border-blue-900/20 hover:border-blue-700/30 transition-all duration-300 h-full flex flex-col backdrop-blur-3xl">          
-          <div className="flex justify-between items-center mb-1">
+          <div className="flex justify-between items-center mb-3">
             <h2 className="text-xl font-medium">Recent Chats</h2>
             <a href="/chat" className="text-sm text-blue-400 hover:text-blue-500 hover:cursor-pointer flex items-center gap-1 group transition-colors">
               <span>View All</span>
               <ChevronRight size={14} className="transition-transform group-hover:translate-x-0.5" />
             </a>
-          </div>
-          <div className="flex items-center gap-2 text-sm text-gray-400 mb-4">
-            <span className="w-2 h-2 bg-green-400 rounded-full"></span>
-            <span>View history of recent chats</span>
           </div>
 
           <div className={`flex-grow flex ${recentChats.length > 0 ? 'items-start' : 'items-center justify-center'}`}>

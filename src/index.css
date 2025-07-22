@@ -167,3 +167,25 @@
 .custom-scrollbar::-webkit-scrollbar-thumb:active {
   background: linear-gradient(180deg, rgba(37, 99, 235, 0.9) 0%, rgba(29, 78, 216, 1) 100%);
 }
+
+/* Custom video controls - hide volume and overflow menu */
+.custom-video-controls::-webkit-media-controls-volume-slider {
+  display: none !important;
+}
+
+.custom-video-controls::-webkit-media-controls-mute-button {
+  display: none !important;
+}
+
+.custom-video-controls::-webkit-media-controls-overflow-button {
+  display: none !important;
+}
+
+.custom-video-controls::-webkit-media-controls-volume-control-container {
+  display: none !important;
+}
+
+/* Hide additional controls that might show playback speed */
+.custom-video-controls::-webkit-media-controls-panel {
+  background: transparent;
+}

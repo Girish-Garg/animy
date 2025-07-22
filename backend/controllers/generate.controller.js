@@ -49,17 +49,47 @@ export const getVideoStatus = async (req, res) => {
         const user = req.user;
         const { chatId, promptId } = req.validatedData.params;
         console.log(`Fetching video status for chatId: ${chatId}, promptId: ${promptId}`);
+        
+        // Check local prompt status FIRST before making external API call
+        if (promptId) {
+            const existingPrompt = await Prompt.findById(promptId);
+            
+            if (!existingPrompt) {
+                return res.status(404).json({ success: false, error: 'Prompt not found' });
+            }
+
+            // If cancelled locally, return immediately without external API call
+            if (existingPrompt.status === 'cancelled') {
+                return res.status(200).json({
+                    success: true,
+                    status: 'cancelled',
+                    message: 'Video generation was cancelled',
+                    type: 'cancelled'
+                });
+            }
+            
+            // If already completed, return immediately
+            if (existingPrompt.status === 'completed' && existingPrompt.video) {
+                return res.status(200).json({
+                    success: true,
+                    status: 'completed',
+                    video: existingPrompt.video,
+                    message: 'Video generated successfully',
+                    type: 'success'
+                });
+            }
+        }
+        
+        // Only make external API call if not cancelled or completed
         const response = await axios.get(`${process.env.Video_API_BASE_URL}/video/status/${user._id}/${chatId}`);
 
         if (!response.data.success) {
             return res.status(500).json({ success: false, error: 'Failed to fetch video status' });
         }
         console.log('Video status response:', response.data.status);
+        
         if (promptId) {
             const existingPrompt = await Prompt.findById(promptId);
-            if (!existingPrompt) {
-                return res.status(404).json({ success: false, error: 'Prompt not found' });
-            }
 
             if (response.data.status.status == 'failed') {
                 const { message } = response.data.status;
@@ -106,6 +136,44 @@ export const getVideoStatus = async (req, res) => {
 
     } catch (error) {
         console.error('Error in getVideoStatus controller:', error);
+        return res.status(500).json({ type: 'error', error: 'Internal Server Error' });
+    }
+}
+
+export const killStatus = async (req, res) => {
+    try {
+        const user = req.user;
+        const { chatId, promptId } = req.validatedData.params;
+        
+        console.log(`Killing video generation for user: ${user._id}, chatId: ${chatId}, promptId: ${promptId}`);
+        
+        // Find the prompt
+        const existingPrompt = await Prompt.findById(promptId);
+        
+        if (!existingPrompt) {
+            return res.status(404).json({ 
+                success: false, 
+                error: 'Prompt not found' 
+            });
+        }
+
+        await Prompt.findByIdAndUpdate(promptId, {
+            status: "cancelled",
+            errorMessage: 'Video generation cancelled by user',
+            updatedAt: new Date()
+        });
+        
+        console.log(`Video generation cancelled for promptId: ${promptId}`);
+        
+        return res.status(200).json({
+            success: true,
+            message: 'Video generation cancelled successfully',
+            status: 'cancelled',
+            chatId: chatId,
+            promptId: promptId
+        });
+    } catch (error) {
+        console.error('Error in killStatus controller:', error);
         return res.status(500).json({ type: 'error', error: 'Internal Server Error' });
     }
 }

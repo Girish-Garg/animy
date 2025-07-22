@@ -2,13 +2,14 @@ import express from 'express';
 import clerkAuthMiddleware from '../middleware/clerkAuth.middleware.js';
 import { validateRequest } from '../middleware/validation.middleware.js';
 import { createChat, deleteChat, getAllChats, getChat, renameChat } from '../controllers/chat.controller.js';
-import { generateVideo, getVideoStatus } from '../controllers/generate.controller.js';
+import { generateVideo, getVideoStatus, killStatus } from '../controllers/generate.controller.js';
 import { 
     createChatSchema, 
     chatParamsSchema, 
     updateChatTitleSchema,
     generateVideoSchema,
-    getVideoStatusSchema
+    getVideoStatusSchema,
+    killStatusSchema
 } from '../utils/zod.validation.js';
 
 const router = express.Router();
@@ -22,5 +23,6 @@ router.delete('/:chatId', validateRequest(chatParamsSchema), deleteChat);
 router.patch('/:chatId/rename', validateRequest(updateChatTitleSchema), renameChat);
 router.post('/:chatId/generate', validateRequest(generateVideoSchema), generateVideo);
 router.get('/:chatId/status/:promptId', validateRequest(getVideoStatusSchema), getVideoStatus);
+router.post('/:chatId/kill/:promptId', validateRequest(killStatusSchema), killStatus);
 
 export default router;

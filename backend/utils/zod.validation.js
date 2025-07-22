@@ -23,6 +23,13 @@ export const getVideoStatusSchema = z.object({
   }),
 });
 
+export const killStatusSchema = z.object({
+  params: z.object({
+    chatId: mongoIdSchema,
+    promptId: mongoIdSchema,
+  }),
+});
+
 // Chat validation
 export const createChatSchema = z.object({
   body: z.object({
@@ -69,12 +76,7 @@ export const addToAlbumSchema = z.object({
   body: z.object({
     video: z.object({
       videoPath: z.string().url('Invalid video URL'),
-      thumbnailPath: z.string().url('Invalid thumbnail URL'),
-      name: z.string()
-        .min(1, 'Video name is required')
-        .max(100, 'Video name must be less than 100 characters')
-        .trim()
-        .optional(),
+      thumbnailPath: z.string().url('Invalid thumbnail URL')
     }),
     chatId: mongoIdSchema,
     name: z.string()

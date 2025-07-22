@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation, Outlet, useSearchParams } from 'react-router-dom';
-import axios from 'axios';
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import { apiUtils } from '@/lib/apiClient';
+import { useAuth } from '@clerk/clerk-react';
+import authManager from '@/lib/authManager';
 import {
   SidebarProvider,
   Sidebar,
@@ -10,12 +12,12 @@ import {
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
-  SidebarTrigger,
   SidebarGroupLabel,
   SidebarInset,
   useSidebar,
 } from "@/components/ui/sidebar";
 import AlbumOverlay from '../components/AlbumOverlay';
+import AddToAlbumOverlay from '../components/AddToAlbumOverlay';
 import {
   Breadcrumb,
   BreadcrumbList,
@@ -25,39 +27,30 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { 
-  HomeIcon, 
-  Disc,
-  CreditCardIcon, 
-  SettingsIcon, 
-  UserIcon,
   HelpCircleIcon,
-  SlashIcon,
-  NotebookIcon,
   BellIcon,
   PanelLeft,
   Folder,
   MessageSquarePlus,
-  MessageCircle,
   SendIcon,
-  EllipsisVerticalIcon,
   Trash2Icon,
   EllipsisIcon,
   Edit3,
+  Download,
+  X,
+  CircleStop,
+  FolderPlus,
 } from "lucide-react";
 
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { useAuth } from '@clerk/clerk-react';
 
 function CustomTrigger() {
   const { toggleSidebar } = useSidebar();
-  const { getToken } = useAuth();
   return (
     <button 
       onClick={toggleSidebar} 
@@ -73,101 +66,232 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const { getToken } = useAuth();
+  const { getToken, isSignedIn, isLoaded } = useAuth();
   const [activePage, setActivePage] = useState('dashboard');
-  const [albumOverlayOpen, setAlbumOverlayOpen] = useState(false);  const [selectedAlbum, setSelectedAlbum] = useState(null);
+  const [albumOverlayOpen, setAlbumOverlayOpen] = useState(false);  
+  const [selectedAlbum, setSelectedAlbum] = useState(null);
+  const [addToAlbumOverlayOpen, setAddToAlbumOverlayOpen] = useState(false);
+  const [selectedVideoData, setSelectedVideoData] = useState(null);
   const [activeChat, setActiveChat] = useState(null);
   const [inputValue, setInputValue] = useState('');
   const [hoveredChatId, setHoveredChatId] = useState(null);
   const [openDropdownId, setOpenDropdownId] = useState(null);
+  const [isAuthInitialized, setIsAuthInitialized] = useState(false);
   const [editingChatId, setEditingChatId] = useState(null);
   const [editingChatName, setEditingChatName] = useState('');
   const [blurEnabled, setBlurEnabled] = useState(true);
-  const [authToken, setAuthToken] = useState(null);
-  
-  const baseURL = import.meta.env.VITE_BACKEND_URL;
+  const [isThrottled, setIsThrottled] = useState(false);
+  const [throttleTimeRemaining, setThrottleTimeRemaining] = useState(0);
+  const throttleIntervalRef = useRef(null);
 
-  // Initialize token on component mount
-  useEffect(() => {
-    const initializeToken = async () => {
-      try {
-        const token = await getToken();
-        setAuthToken(token);
-      } catch (error) {
-        console.error('Failed to get auth token:', error);
+  // Throttling constants
+  const THROTTLE_DURATION = 10 * 60 * 1000; // 10 minutes in milliseconds
+  const THROTTLE_STORAGE_KEY = 'animy_last_prompt_time';
+
+  // Check if user is currently throttled
+  const checkThrottleStatus = () => {
+    const lastPromptTime = localStorage.getItem(THROTTLE_STORAGE_KEY);
+    if (lastPromptTime) {
+      const timeSinceLastPrompt = Date.now() - parseInt(lastPromptTime);
+      const timeRemaining = THROTTLE_DURATION - timeSinceLastPrompt;
+      
+      if (timeRemaining > 0) {
+        setIsThrottled(true);
+        setThrottleTimeRemaining(Math.ceil(timeRemaining / 1000)); // Convert to seconds
+        startThrottleTimer(timeRemaining);
+        return true;
       }
-    };
-    initializeToken();
-  }, [getToken]);
-
-  // Function to refresh token when needed
-  const refreshToken = async () => {
-    try {
-      const token = await getToken();
-      setAuthToken(token);
-      return token;
-    } catch (error) {
-      console.error('Failed to refresh auth token:', error);
-      return null;
     }
+    setIsThrottled(false);
+    setThrottleTimeRemaining(0);
+    return false;
+  };
+
+  // Start the throttle countdown timer
+  const startThrottleTimer = (initialTime) => {
+    if (throttleIntervalRef.current) {
+      clearInterval(throttleIntervalRef.current);
+    }
+
+    throttleIntervalRef.current = setInterval(() => {
+      setThrottleTimeRemaining(prev => {
+        const newTime = prev - 1;
+        if (newTime <= 0) {
+          setIsThrottled(false);
+          setThrottleTimeRemaining(0);
+          clearInterval(throttleIntervalRef.current);
+          throttleIntervalRef.current = null;
+          localStorage.removeItem(THROTTLE_STORAGE_KEY);
+          
+          // Dispatch custom event to notify other components throttling ended
+          window.dispatchEvent(new CustomEvent('throttleStatusChanged', { 
+            detail: { throttled: false, timestamp: Date.now() } 
+          }));
+          
+          return 0;
+        }
+        return newTime;
+      });
+    }, 1000);
+  };
+
+  // Apply throttle after sending a prompt
+  const applyThrottle = () => {
+    const currentTime = Date.now();
+    localStorage.setItem(THROTTLE_STORAGE_KEY, currentTime.toString());
+    setIsThrottled(true);
+    setThrottleTimeRemaining(THROTTLE_DURATION / 1000); // Convert to seconds
+    startThrottleTimer(THROTTLE_DURATION);
+    
+    // Dispatch custom event to notify other components
+    window.dispatchEvent(new CustomEvent('throttleStatusChanged', { 
+      detail: { throttled: true, timestamp: currentTime } 
+    }));
+  };
+
+  // Format time remaining for display
+  const formatTimeRemaining = (seconds) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
   
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!inputValue.trim()) return;
     
-    try {
-      const token = authToken || await refreshToken();
-      if (!token) {
-        console.error('No auth token available');
-        return;
-      }
-      
+    // Check if user is throttled
+    if (isThrottled) {
+      return;
+    }
+    
+    try {      
       // If we're in an active chat, send message to existing chat
       if (activeChat) {
-        // TODO: Implement sending message to existing chat
-        console.log('Sending message to existing chat:', inputValue);
+        // Apply throttle before sending the request
+        applyThrottle();
+        
+        // Show immediate feedback by adding user message optimistically
+        const userPrompt = {
+          _id: `temp-${Date.now()}`,
+          prompt: inputValue.trim(),
+          video: null,
+          createdAt: new Date().toISOString()
+        };
+        
+        // Add user message to current chat data immediately
+        setCurrentChatData(prevData => ({
+          ...prevData,
+          prompts: [...(prevData?.prompts || []), userPrompt]
+        }));
+        
+        // Clear input immediately for better UX
+        const promptToSend = inputValue.trim();
         setInputValue('');
+        
+        // Set loading state for the new prompt
+        setGeneratingPromptId(userPrompt._id);
+        setGeneratingMessage('Sending message...');
+        
+        try {
+          const response = await apiUtils.post(`/chat/${activeChat}/generate`, {
+            prompt: promptToSend
+          });
+          
+          const data = response.data;
+          
+          if (data.success) {
+            // Replace the temporary prompt with the real one from server
+            setCurrentChatData(prevData => ({
+              ...prevData,
+              prompts: prevData.prompts.map(p => 
+                p._id === userPrompt._id 
+                  ? { ...p, _id: data.promptId }
+                  : p
+              )
+            }));
+            
+            // Start polling for video generation status
+            if (data.promptId) {
+              startPolling(activeChat, data.promptId);
+            }
+            
+            // Refresh the chat data to get the complete updated chat
+            setTimeout(() => fetchChatData(activeChat, false), 1000);
+          } else {
+            console.error('Failed to send message:', data.message);
+            setGeneratingMessage('Failed to send message');
+            setGeneratingPromptId(null);
+            
+            // Remove the optimistic prompt on failure
+            setCurrentChatData(prevData => ({
+              ...prevData,
+              prompts: prevData.prompts.filter(p => p._id !== userPrompt._id)
+            }));
+          }
+        } catch (error) {
+          console.error('Error sending message to existing chat:', error);
+          setGeneratingMessage('Failed to send message');
+          setGeneratingPromptId(null);
+          
+          // Remove the optimistic prompt on error
+          setCurrentChatData(prevData => ({
+            ...prevData,
+            prompts: prevData.prompts.filter(p => p._id !== userPrompt._id)
+          }));
+        }
+        
         return;
       }
       
       // If no active chat, create new chat with the prompt
-      const response = await axios.post(`${baseURL}/chat`, {
+      setIsCreatingNewChat(true);
+      
+      // Apply throttle before creating new chat
+      applyThrottle();
+      
+      const response = await apiUtils.post('/chat', {
         prompt: inputValue.trim(),
         title: inputValue.trim().slice(0, 50) // Use first 50 chars as title
-      }, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
       });
       
       const data = response.data;
       
       if (data.type === "chat_replaced" || data.type === "success") {
-        // Refresh the chats list to show the new/updated chat
-        await fetchChats();
+        // Clear the input first for immediate feedback
+        setInputValue('');
         
-        // Set the new chat as active and redirect
+        // Set the new chat as active with smooth transition
         setActiveChat(data.chat._id);
         setActivePage('chat');
         localStorage.setItem('animy_last_chat', data.chat._id);
-        navigate(`/chat/chat?id=${data.chat._id}`);
+        
+        // Use a slight delay for smoother transition
+        setTimeout(() => {
+          navigate(`/chat/chat?id=${data.chat._id}`);
+        }, 100);
         
         // Fetch the chat data to show the new prompt and response
-        fetchChatData(data.chat._id);
+        setTimeout(() => {
+          fetchChatData(data.chat._id);
+        }, 200);
+        
+        // Refresh the chats list to show the new chat in sidebar
+        setTimeout(() => {
+          fetchChats();
+        }, 300);
         
         // Start polling for video generation status
         if (data.promptId) {
-          startPolling(data.chat._id, data.promptId);
+          setTimeout(() => {
+            startPolling(data.chat._id, data.promptId);
+          }, 400);
         }
-        
-        // Clear the input
-        setInputValue('');
-        
-        console.log('New chat created successfully:', data.chat._id);
       } else {
         console.error('Failed to create new chat:', data.message);
       }
+      
+      setIsCreatingNewChat(false);
     } catch (error) {
       console.error('Error creating new chat:', error);
     }
@@ -176,25 +300,16 @@ export default function Layout() {
   const [isLoading, setIsLoading] = useState(true);
   const [currentChatData, setCurrentChatData] = useState(null);
   const [isChatLoading, setIsChatLoading] = useState(false);
-  const [pollingInterval, setPollingInterval] = useState(null);
   const [generatingPromptId, setGeneratingPromptId] = useState(null);
   const [generatingMessage, setGeneratingMessage] = useState('');
+  const [isCreatingNewChat, setIsCreatingNewChat] = useState(false);
+  const pollingIntervalRef = useRef(null);
 
   // Function to fetch chats from API
   const fetchChats = async () => {
     try {
-      const token = authToken || await refreshToken();
-      if (!token) {
-        console.error('No auth token available');
-        return;
-      }
-      
       setIsLoading(true);
-      const response = await axios.get(`${baseURL}/chat`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
+      const response = await apiUtils.get('/chat');
       const data = response.data;
       
       if (data.success) {
@@ -205,96 +320,112 @@ export default function Layout() {
           createdAt: chat.createdAt
         }));
         setChatItems(transformedChats);
-      } else {
-        console.error('Failed to fetch chats:', data.message);
       }
     } catch (error) {
-      console.error('Error fetching chats:', error);
+      // Don't log 401 errors as they're handled by the interceptor
+      if (error.response?.status !== 401) {
+        console.error('Error fetching chats:', error);
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
   // Function to fetch specific chat data
-  const fetchChatData = async (chatId) => {
+  const fetchChatData = async (chatId, showLoading = true) => {
     try {
-      const token = authToken || await refreshToken();
-      if (!token) {
-        console.error('No auth token available');
+      // Check if auth manager is initialized before making the request
+      if (!isLoaded || !isSignedIn || !isAuthInitialized) {
         return;
       }
+
+      if (showLoading) {
+        setIsChatLoading(true);
+      }
       
-      setIsChatLoading(true);
-      const response = await axios.get(`${baseURL}/chat/${chatId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
+      const response = await apiUtils.get(`/chat/${chatId}`);
       const data = response.data;
       
       if (data.success) {
         setCurrentChatData(data.chat);
-      } else {
-        console.error('Failed to fetch chat data:', data.message);
+        
+        // Check if there are any prompts that are still processing and start polling
+        if (data.chat && data.chat.prompts) {
+          const processingPrompt = data.chat.prompts.find(prompt => 
+            !prompt.video && prompt.status !== 'failed' && prompt.status !== 'cancelled'
+          );
+          
+          if (processingPrompt) {
+            // Start polling for the processing prompt
+            console.log('Found processing prompt, starting polling:', processingPrompt._id);
+            startPolling(chatId, processingPrompt._id);
+          }
+        }
       }
     } catch (error) {
-      console.error('Error fetching chat data:', error);
+      // Only log non-auth errors
+      if (!error.message?.includes('Auth manager not initialized')) {
+        console.error('Error fetching chat data:', error);
+      }
     } finally {
-      setIsChatLoading(false);
+      if (showLoading) {
+        setIsChatLoading(false);
+      }
     }
   };
 
   // Function to poll prompt status
   const pollPromptStatus = async (chatId, promptId) => {
     try {
-      const token = authToken || await refreshToken();
-      if (!token) {
-        console.error('No auth token available for polling');
-        return;
-      }
-
-      const response = await axios.get(`${baseURL}/chat/${chatId}/status/${promptId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
-
+      const response = await apiUtils.get(`/chat/${chatId}/status/${promptId}`);
       const data = response.data;
-      
+
       if (data.success) {
-        if (data.status === 'success' && data.video) {
-          // Video generation completed successfully
-          console.log('Video generation completed:', data.video);
+        const status = data.status;
+        
+        if (status === 'completed') {
+          setGeneratingMessage('');
+          setGeneratingPromptId(null);
           
           // Stop polling
-          if (pollingInterval) {
-            clearInterval(pollingInterval);
-            setPollingInterval(null);
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
           }
-          setGeneratingPromptId(null);
-          setGeneratingMessage('');
           
-          // Refresh chat data to show the new video
-          fetchChatData(chatId);
-        } else if (data.status === 'failed') {
-          // Video generation failed
-          console.error('Video generation failed:', data.message);
+          // Refresh the chat data to show the completed video
+          fetchChatData(chatId, false);
+        } else if (status === 'failed') {
+          setGeneratingMessage('');
+          setGeneratingPromptId(null);
           
           // Stop polling
-          if (pollingInterval) {
-            clearInterval(pollingInterval);
-            setPollingInterval(null);
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
           }
-          setGeneratingPromptId(null);
-          setGeneratingMessage('');
           
-          // Refresh chat data to show error state
-          fetchChatData(chatId);
-        } else {
-          // Still processing, continue polling
-          console.log('Video still generating:', data.message || 'Processing...');
-          // Update the generating message
-          setGeneratingMessage(data.message || 'Processing your video...');
+          // Update the chat data to show failure state
+          setCurrentChatData(prevData => {
+            if (!prevData) return prevData;
+            
+            return {
+              ...prevData,
+              prompts: prevData.prompts.map(p => 
+                p._id === promptId 
+                  ? { ...p, status: 'failed', video: null }
+                  : p
+              )
+            };
+          });
+          
+          // Refresh chat data to get the latest state from server
+          setTimeout(() => fetchChatData(chatId, false), 1000);
+        } else if (status === 'processing') {
+          // Use the message from the API if available, or default message
+          const message = data.message || 'Generating video...';
+          setGeneratingMessage(message);
+          setGeneratingPromptId(promptId);
         }
       }
     } catch (error) {
@@ -308,8 +439,9 @@ export default function Layout() {
     setGeneratingMessage('Starting video generation...');
     
     // Clear any existing polling
-    if (pollingInterval) {
-      clearInterval(pollingInterval);
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
     }
     
     // Start new polling interval
@@ -317,55 +449,205 @@ export default function Layout() {
       pollPromptStatus(chatId, promptId);
     }, 25000); // Poll every 25 seconds
     
-    setPollingInterval(intervalId);
+    pollingIntervalRef.current = intervalId;
     
     // Also poll immediately
     pollPromptStatus(chatId, promptId);
   };
 
+  // Stop video generation process
+  const stopVideoGeneration = async () => {
+    if (!generatingPromptId || !activeChat) {
+      // If no active generation, just clear the polling
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+      setGeneratingPromptId(null);
+      setGeneratingMessage('');
+      return;
+    }
+
+    try {
+      // Call the backend kill API to cancel the video generation
+      const fullUrl = `/chat/${activeChat}/kill/${generatingPromptId}`;
+      console.log(`Making kill request to: ${fullUrl}`);
+      console.log(`Full API URL would be: ${import.meta.env.VITE_BACKEND_URL}${fullUrl}`);
+      const response = await apiUtils.post(fullUrl);
+      
+      if (response.data.success) {
+        console.log('Video generation cancelled successfully');
+        
+        // Clear polling interval
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current);
+          pollingIntervalRef.current = null;
+        }
+        
+        // Reset generation state - this will hide the video placeholder
+        setGeneratingPromptId(null);
+        setGeneratingMessage('');
+        
+        // Optionally refresh chat data to reflect the cancelled status
+        setTimeout(() => {
+          fetchChatData(activeChat, false);
+        }, 200);
+        
+      } else {
+        console.error('Failed to cancel video generation:', response.data.error);
+      }
+    } catch (error) {
+      console.error('Error calling kill API:', error);
+    }
+  };
+
   // Cleanup polling on component unmount
   useEffect(() => {
     return () => {
-      if (pollingInterval) {
-        clearInterval(pollingInterval);
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+      if (throttleIntervalRef.current) {
+        clearInterval(throttleIntervalRef.current);
+        throttleIntervalRef.current = null;
       }
     };
-  }, [pollingInterval]);
+  }, []);
+
+  // Check throttle status on component mount and when window gains focus
+  useEffect(() => {
+    checkThrottleStatus();
+    
+    // Add event listeners for window focus and visibility change
+    const handleFocus = () => {
+      checkThrottleStatus();
+    };
+    
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        checkThrottleStatus();
+      }
+    };
+    
+    // Listen for storage changes to sync throttling across tabs/components
+    const handleStorageChange = (e) => {
+      if (e.key === THROTTLE_STORAGE_KEY) {
+        checkThrottleStatus();
+      }
+    };
+    
+    // Listen for custom throttle events from other components
+    const handleThrottleChange = () => {
+      checkThrottleStatus();
+    };
+    
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('throttleStatusChanged', handleThrottleChange);
+    
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('throttleStatusChanged', handleThrottleChange);
+    };
+  }, []);
   useEffect(() => {
     const path = location.pathname.replace(/^\//, '') || 'dashboard';
     setActivePage(path);
+    
+    // If user is on the "New Chat" page (/chat), clear the active chat
+    if (location.pathname === '/chat') {
+      setActiveChat(null);
+      setCurrentChatData(null);
+    }
   }, [location]);
 
   useEffect(() => {
-    // Only fetch chats when we have a token
-    if (authToken) {
-      fetchChats();
+    // Initialize auth manager when component mounts
+    if (isLoaded && isSignedIn && getToken) {
+      authManager.initialize(getToken);
+      // Set auth as initialized after a short delay
+      setTimeout(() => {
+        setIsAuthInitialized(true);
+      }, 100);
+    } else {
+      setIsAuthInitialized(false);
     }
-  }, [authToken]);
+  }, [isLoaded, isSignedIn, getToken]);
+
+  useEffect(() => {
+    // Only fetch chats when Clerk is loaded and user is signed in
+    if (isLoaded && isSignedIn) {
+      // Add a small delay to ensure auth manager is initialized
+      setTimeout(() => {
+        fetchChats();
+      }, 300);
+    } else if (isLoaded && !isSignedIn) {
+      navigate('/signin');
+    }
+  }, [isLoaded, isSignedIn, navigate]);
 
   // Handle URL parameters to load specific chat
   useEffect(() => {
     const chatId = searchParams.get('id');
-    if (chatId && location.pathname.includes('/chat/chat')) {
+    const promptId = searchParams.get('promptId');
+    
+    if (chatId && location.pathname.includes('/chat/chat') && isLoaded && isSignedIn && isAuthInitialized) {
       setActiveChat(chatId);
       setActivePage('chat');
       localStorage.setItem('animy_last_chat', chatId);
-      fetchChatData(chatId);
+      
+      // Add a delay to ensure auth manager is initialized
+      setTimeout(() => {
+        fetchChatData(chatId);
+        
+        // If we have a specific promptId (likely from Dashboard), start polling for it
+        if (promptId) {
+          console.log('Starting polling for prompt from URL:', promptId);
+          setTimeout(() => {
+            startPolling(chatId, promptId);
+            // Clean up the URL by removing the promptId parameter
+            const newUrl = new URL(window.location);
+            newUrl.searchParams.delete('promptId');
+            window.history.replaceState({}, '', newUrl);
+          }, 500); // Additional delay to ensure chat data is loaded
+        }
+      }, 300);
     }
-  }, [searchParams, location.pathname]);
+  }, [searchParams, location.pathname, isLoaded, isSignedIn, isAuthInitialized]);
 
   useEffect(() => {
     const lastChatId = localStorage.getItem('animy_last_chat');
-    if (lastChatId && !searchParams.get('id')) {
+    // Only restore from localStorage if:
+    // 1. There's a lastChatId
+    // 2. No chat ID in URL params
+    // 3. Auth is ready
+    // 4. User is NOT intentionally on the "New Chat" page (/chat)
+    // 5. Chat exists in the list
+    const isOnNewChatPage = location.pathname === '/chat';
+    
+    if (lastChatId && 
+        !searchParams.get('id') && 
+        isLoaded && 
+        isSignedIn && 
+        isAuthInitialized &&
+        !isOnNewChatPage) {
       const chatExists = chatItems.some(chat => chat.id === lastChatId);
       if (chatExists) {
         setActiveChat(lastChatId);
         setActivePage('chat');
-        // Fetch the chat data when restoring from localStorage
-        fetchChatData(lastChatId);
+        // Navigate to the specific chat
+        navigate(`/chat/chat?id=${lastChatId}`);
+        // Fetch the chat data when restoring from localStorage with delay
+        setTimeout(() => {
+          fetchChatData(lastChatId);
+        }, 400);
       }
     }
-  }, [chatItems]);
+  }, [chatItems, isLoaded, isSignedIn, isAuthInitialized, location.pathname, navigate, searchParams]);
   
   const navItems = [
     { key: 'New Chat', label: 'New Chat', icon: MessageSquarePlus },
@@ -396,6 +678,8 @@ const renderMenuItem = (item) => {
               setActiveChat(null);
               setCurrentChatData(null);
               setActivePage('chat');
+              // Clear localStorage to prevent auto-restoration
+              localStorage.removeItem('animy_last_chat');
               navigate('/chat');
             } else {
               navigate(`/${key}`);
@@ -437,10 +721,10 @@ const renderMenuItem = (item) => {
     setActivePage('chat');
     navigate(`/chat/chat?id=${chatId}`);
     
-    // Fetch the specific chat data
-    fetchChatData(chatId);
-    
-    console.log(`Opening chat ${chatId}`);
+    // Fetch the specific chat data with a small delay to ensure auth is ready
+    setTimeout(() => {
+      fetchChatData(chatId);
+    }, 200);
   };
   const handleChatRename = (chat) => {
     setEditingChatId(chat.id);
@@ -463,18 +747,8 @@ const renderMenuItem = (item) => {
   const handleSaveChatName = async (chatId) => {
     if (editingChatName.trim()) {
       try {
-        const token = authToken || await refreshToken();
-        if (!token) {
-          console.error('No auth token available');
-          return;
-        }
-        
-        const response = await axios.put(`${baseURL}/chat/${chatId}`, {
+        const response = await apiUtils.patch(`/chat/${chatId}/rename`, {
           title: editingChatName.trim()
-        }, {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
         });
         
         const data = response.data;
@@ -508,17 +782,7 @@ const renderMenuItem = (item) => {
 
   const handleChatDelete = async (chat) => {
     try {
-      const token = authToken || await refreshToken();
-      if (!token) {
-        console.error('No auth token available');
-        return;
-      }
-      
-      const response = await axios.delete(`${baseURL}/chat/${chat.id}`, {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
+      const response = await apiUtils.delete(`/chat/${chat.id}`);
       
       const data = response.data;
       
@@ -539,6 +803,35 @@ const renderMenuItem = (item) => {
       console.error('Error deleting chat:', error);
     }
     setOpenDropdownId(null);
+  };
+
+  // Function to handle video download
+  const handleDownloadVideo = (videoPath, prompt) => {
+    try {
+      const link = document.createElement('a');
+      link.href = videoPath;
+      link.download = `animy-video-${prompt.slice(0, 20).replace(/[^a-zA-Z0-9]/g, '_')}.mp4`;
+      link.target = '_blank';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('Error downloading video:', error);
+    }
+  };
+
+  // Function to handle add to album
+  const handleAddToAlbum = (videoData) => {
+    setSelectedVideoData(videoData);
+    setAddToAlbumOverlayOpen(true);
+  };
+
+  // Function to handle when video is successfully added to album
+  const handleVideoAddedToAlbum = () => {
+    // Close the overlay and reset selected video data
+    setAddToAlbumOverlayOpen(false);
+    setSelectedVideoData(null);
+    // You could add a success notification here if needed
   };
   
   const renderChatItem = (chat) => {
@@ -561,7 +854,7 @@ const renderMenuItem = (item) => {
           onMouseEnter={() => setHoveredChatId(chat.id)}
           onMouseLeave={() => setHoveredChatId(null)}
         >
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 pr-2">
             {editingChatId === chat.id ? (
               <input
                 type="text"
@@ -590,7 +883,7 @@ const renderMenuItem = (item) => {
               />
             ) : (
               <span className={`
-                font-medium transition-all duration-100 truncate
+                font-medium transition-all duration-100 truncate block max-w-[95%]
                 ${isActive 
                   ? 'text-white' 
                   : 'text-gray-300'
@@ -602,14 +895,14 @@ const renderMenuItem = (item) => {
           </div>
           <DropdownMenu onOpenChange={(open) => setOpenDropdownId(open ? chat.id : null)}>
             <DropdownMenuTrigger asChild>
-              <button 
+              <div 
                 className={`group transition-opacity duration-200 hover:cursor-pointer ${
                   isHovered || isDropdownOpen ? 'opacity-100' : 'opacity-0'
                 }`}
                 onClick={(e) => e.stopPropagation()}
               >
                 <EllipsisIcon className='text-gray-300 group-hover:text-white transition-colors' size={16}/>
-              </button>
+              </div>
             </DropdownMenuTrigger>
             <DropdownMenuContent
               className="bg-[#1A1F37] border-blue-900/30 shadow-lg min-w-[200px] w-fit"
@@ -750,16 +1043,61 @@ const renderMenuItem = (item) => {
                               {prompt.video ? (
                                 <div className="flex justify-center">
                                   <div className="w-[80%] rounded-2xl rounded-tr-md p-3">
-                                    <div className="relative aspect-video rounded-xl overflow-hidden bg-black">
-                                      <video 
-                                        controls 
-                                        poster={prompt.video.thumbnailPath}
-                                        className="w-full h-full object-cover"
-                                        preload="metadata"
-                                      >
-                                        <source src={prompt.video.videoPath} type="video/mp4" />
-                                        Your browser does not support the video tag.
-                                      </video>
+                                    <div className="relative group">
+                                      <div className="aspect-video rounded-xl overflow-hidden bg-black">
+                                        <video 
+                                          controls
+                                          poster={prompt.video.thumbnailPath}
+                                          className="w-full h-full object-cover custom-video-controls"
+                                          preload="metadata"
+                                          controlsList="nodownload noremoteplayback"
+                                          disablePictureInPicture
+                                        >
+                                          <source src={prompt.video.videoPath} type="video/mp4" />
+                                          Your browser does not support the video tag.
+                                        </video>
+                                      </div>
+                                      
+                                      {/* Hover buttons below the video */}
+                                      <div className="flex items-start justify-start my-1 mx-2 gap-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                                        <button
+                                          onClick={() => handleDownloadVideo(prompt.video.videoPath, prompt.prompt)}
+                                          className="flex items-center justify-center text-gray-300 hover:text-white rounded-full transition-colors duration-200 hover:scale-110"
+                                          title="Download Video"
+                                        >
+                                          <Download size={18} />
+                                        </button>
+                                        
+                                        <button
+                                          onClick={() => handleAddToAlbum({
+                                            videoPath: prompt.video.videoPath,
+                                            thumbnailPath: prompt.video.thumbnailPath,
+                                            chatId: activeChat,
+                                            promptText: prompt.prompt
+                                          })}
+                                          className="flex items-center justify-center text-gray-300 hover:text-white rounded-full transition-colors duration-200 hover:scale-110"
+                                          title="Add to Album"
+                                        >
+                                          <FolderPlus size={18} />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : prompt.status === 'failed' ? (
+                                <div className="flex justify-center">
+                                  <div className="w-[80%] rounded-2xl rounded-tr-md p-3">
+                                    <div className="relative aspect-video rounded-xl overflow-hidden bg-gradient-to-r from-red-900/20 via-red-600/30 to-red-900/20 border border-red-500/30">
+                                      <div className="flex items-center justify-center h-full">
+                                        <div className="text-center">
+                                          <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center mx-auto mb-4">
+                                            <X className="w-6 h-6 text-red-400" />
+                                          </div>
+                                          <p className="text-red-400 text-lg font-medium">Video Generation Failed</p>
+                                          <p className="text-red-300 text-sm mt-2">Something went wrong while creating your video</p>
+                                          <p className="text-red-200 text-xs mt-1">Please try again later</p>
+                                        </div>
+                                      </div>
                                     </div>
                                   </div>
                                 </div>
@@ -790,49 +1128,99 @@ const renderMenuItem = (item) => {
                       )}
                     </div>
                     <div className="flex-shrink-0 px-6 py-6">
+                      {isThrottled && (
+                        <div className="mb-4 p-3 bg-orange-900/20 border border-orange-600/30 rounded-lg text-center">
+                          <p className="text-orange-400 text-sm font-medium">limit active</p>
+                          <p className="text-orange-300 text-xs mt-1">
+                            Next prompt available in: {formatTimeRemaining(throttleTimeRemaining)}
+                          </p>
+                        </div>
+                      )}
                       <form onSubmit={handleSubmit} className="relative">
                         <input
                           type="text"
                           value={inputValue}
                           onChange={(e) => setInputValue(e.target.value)}
-                          className="w-full bg-[#131631] text-white border border-blue-900/30 rounded-full py-3 px-4 pr-12 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50"
-                          placeholder="Describe your animation scene..."
+                          className="w-full bg-[#131631] text-white border border-blue-900/30 rounded-full py-3 px-4 pr-12 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                          placeholder={isThrottled ? `Wait ${formatTimeRemaining(throttleTimeRemaining)}` : "Describe your animation scene..."}
                           aria-label="Scene description"
+                          disabled={generatingPromptId !== null || isThrottled}
                         />
-                        <button 
-                          type="submit" 
-                          className="absolute right-5 top-1/2 transform -translate-y-1/2 text-blue-500 hover:text-blue-600 hover:cursor-pointer transition-colors disabled:text-gray-600 disabled:cursor-not-allowed"
-                          disabled={!inputValue.trim()}
-                          aria-label="Submit"
-                        >
-                          <SendIcon size={18} />
-                        </button>
+                        {generatingPromptId ? (
+                          <button 
+                            type="button"
+                            onClick={stopVideoGeneration}
+                            className="absolute right-5 top-1/2 transform -translate-y-1/2 text-red-500 hover:text-red-600 hover:cursor-pointer transition-colors"
+                            aria-label="Stop generation"
+                          >
+                            <CircleStop size={18} />
+                          </button>
+                        ) : (
+                          <button 
+                            type="submit" 
+                            className="absolute right-5 top-1/2 transform -translate-y-1/2 text-blue-500 hover:text-blue-600 hover:cursor-pointer transition-colors disabled:text-gray-600 disabled:cursor-not-allowed"
+                            disabled={!inputValue.trim() || isThrottled}
+                            aria-label="Submit"
+                          >
+                            <SendIcon size={18} />
+                          </button>
+                        )}
                       </form>
                     </div>
                   </div>
                 ) : (                  
                 <div className="flex flex-col items-center justify-center h-[calc(100vh-140px)] px-6">
                     <div className="max-w-2xl w-full flex flex-col items-center">
-                      <h2 className="text-3xl font-bold text-white mb-4">What are you waiting for</h2>
-                      <p className="text-2xl text-white mb-12">start creating</p>
-                      <form onSubmit={handleSubmit} className="relative flex-grow flex flex-col justify-center w-full">
-                        <input
-                          type="text"
-                          value={inputValue}
-                          onChange={(e) => setInputValue(e.target.value)}
-                          className="w-full bg-[#131631] text-white border border-blue-900/30 rounded-full py-3 px-4 pr-12 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50"
-                          placeholder="Describe your animation scene the way you want."
-                          aria-label="Scene description"
-                        />
-                        <button 
-                          type="submit" 
-                          className="absolute right-5 top-1/2 transform -translate-y-1/2 text-blue-500 hover:text-blue-600 hover:cursor-pointer transition-colors disabled:text-gray-600 disabled:cursor-not-allowed"
-                          disabled={!inputValue.trim()}
-                          aria-label="Submit"
-                        >
-                          <SendIcon size={18} />
-                        </button>
-                      </form>
+                      {isCreatingNewChat ? (
+                        <div className="text-center">
+                          <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                          <p className="text-white text-lg font-medium">Creating your chat...</p>
+                          <p className="text-blue-200 text-sm mt-2">Setting up your conversation</p>
+                        </div>
+                      ) : (
+                        <>
+                          <h2 className="text-3xl font-bold text-white mb-4">What are you waiting for</h2>
+                          <p className="text-2xl text-white mb-12">start creating</p>
+                          {isThrottled && (
+                            <div className="mb-6 p-4 bg-orange-900/20 border border-orange-600/30 rounded-lg text-center max-w-md mx-auto">
+                              <p className="text-orange-400 text-base font-medium">Rate limit active</p>
+                              <p className="text-orange-300 text-sm mt-2">
+                                Next prompt available in: {formatTimeRemaining(throttleTimeRemaining)}
+                              </p>
+                            </div>
+                          )}
+                          <form onSubmit={handleSubmit} className="relative flex-grow flex flex-col justify-center w-full">
+                            <input
+                              type="text"
+                              value={inputValue}
+                              onChange={(e) => setInputValue(e.target.value)}
+                              className="w-full bg-[#131631] text-white border border-blue-900/30 rounded-full py-3 px-4 pr-12 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                              placeholder = {isThrottled ? `Wait ${formatTimeRemaining(throttleTimeRemaining)}` : "Describe your animation scene the way you want."}
+                              aria-label="Scene description"
+                              disabled={generatingPromptId !== null || isCreatingNewChat || isThrottled}
+                            />
+                            {generatingPromptId ? (
+                              <button 
+                                type="button"
+                                onClick={stopVideoGeneration}
+                                className="absolute right-5 top-1/2 transform -translate-y-1/2 text-red-500 hover:text-red-600 hover:cursor-pointer transition-colors"
+                                aria-label="Stop generation"
+                              >
+                                <CircleStop size={18} />
+                              </button>
+                            ) : (
+                              <button 
+                                type="submit" 
+                                className="absolute right-5 top-1/2 transform -translate-y-1/2 text-blue-500 hover:text-blue-600 hover:cursor-pointer transition-colors disabled:text-gray-600 disabled:cursor-not-allowed"
+                                disabled={!inputValue.trim() || isCreatingNewChat || isThrottled}
+                                aria-label="Submit"
+                              >
+                                <SendIcon size={18} />
+                              </button>
+                            )}
+                          </form>
+                        </>
+                      )}
                     </div>
                   </div>
                 )}
@@ -843,6 +1231,18 @@ const renderMenuItem = (item) => {
                   setAlbumOverlayOpen(false);
                 }} 
                 albumData={selectedAlbum}
+              />
+              
+              <AddToAlbumOverlay
+                isOpen={addToAlbumOverlayOpen}
+                onClose={() => {
+                  setAddToAlbumOverlayOpen(false);
+                  setSelectedVideoData(null);
+                }}
+                onVideoAdded={handleVideoAddedToAlbum}
+                videoPath={selectedVideoData?.videoPath}
+                thumbnailPath={selectedVideoData?.thumbnailPath}
+                chatId={selectedVideoData?.chatId}
               />            
               </SidebarInset>
         </SidebarProvider>

@@ -1,17 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { X, Plus, ChevronDown, Loader2 } from 'lucide-react';
 import gsap from 'gsap';
-import axios from 'axios';
-import { useAuth } from '@clerk/clerk-react';
 import { toast } from 'sonner';
+import { apiUtils } from '@/lib/apiClient';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-
-const baseURL = import.meta.env.VITE_BACKEND_URL;
 
 const AddToAlbumOverlay = ({ 
   isOpen, 
@@ -29,36 +26,6 @@ const AddToAlbumOverlay = ({
   const [isAdding, setIsAdding] = useState(false);
   const [loadingAlbums, setLoadingAlbums] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [authToken, setAuthToken] = useState(null);
-
-  const { getToken } = useAuth();
-
-  // Initialize token when component opens
-  useEffect(() => {
-    const initializeToken = async () => {
-      try {
-        const token = await getToken();
-        setAuthToken(token);
-      } catch (error) {
-        console.error('Failed to get auth token:', error);
-      }
-    };
-    if (isOpen) {
-      initializeToken();
-    }
-  }, [isOpen, getToken]);
-
-  // Function to refresh token when needed
-  const refreshToken = async () => {
-    try {
-      const token = await getToken();
-      setAuthToken(token);
-      return token;
-    } catch (error) {
-      console.error('Failed to refresh auth token:', error);
-      return null;
-    }
-  };
 
   // Fetch albums when component opens
   useEffect(() => {
@@ -73,20 +40,10 @@ const AddToAlbumOverlay = ({
     setLoadingAlbums(true);
     
     try {
-      const token = authToken || await refreshToken();
-      if (!token) {
-        toast.error('Authentication failed. Please try again.');
-        return;
-      }
-
-      const response = await axios.get(`${baseURL}/album/`, {
-        withCredentials: true,
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
+      const response = await apiUtils.get('/album/');
 
       if (response.data.success) {
+        console.log('Fetched albums:', response.data.albums); // Debug log to see album structure
         setAlbums(response.data.albums);
       } else {
         toast.error('Failed to load albums');
@@ -159,29 +116,30 @@ const AddToAlbumOverlay = ({
       return;
     }
 
+    console.log('Selected album:', selectedAlbum); // Debug log to see album structure
+    console.log('Album ID:', selectedAlbum._id || selectedAlbum.id); // Check both possible ID fields
+
     setIsAdding(true);
 
     try {
-      const token = authToken || await refreshToken();
-      if (!token) {
-        toast.error('Authentication failed. Please try again.');
+      // Use _id if available, fallback to id
+      const albumId = selectedAlbum._id;
+      
+      if (!albumId) {
+        toast.error('Invalid album selected. Please try again.');
+        setIsAdding(false);
         return;
       }
 
-      const response = await axios.post(
-        `${baseURL}/album/${selectedAlbum.id}/video`,
-        {
-          name: videoName.trim(),
-          videoPath: videoPath,
-          thumbnailPath: thumbnailPath,
+      const response = await apiUtils.patch(
+        `/album/${albumId}/video`,
+        {   
+            name: videoName.trim(),
+            video:{
+                videoPath: videoPath,
+                thumbnailPath: thumbnailPath,
+            },
           chatId: chatId
-        },
-        {
-          withCredentials: true,
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
         }
       );
 
@@ -288,9 +246,10 @@ const AddToAlbumOverlay = ({
                 ) : (
                   albums.map((album) => (
                     <DropdownMenuItem
-                      key={album.id}
+                      key={album._id || album.id}
                       className="text-gray-300 hover:!text-white hover:!bg-blue-900/30 focus:!bg-blue-900/30 focus:!text-white cursor-pointer"
                       onClick={() => {
+                        console.log('Selecting album:', album); // Debug log
                         setSelectedAlbum(album);
                         setDropdownOpen(false);
                       }}

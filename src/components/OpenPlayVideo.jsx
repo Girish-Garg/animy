@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Play, Pause, Volume2, VolumeX, Maximize, Minimize, RotateCcw, SkipBack, SkipForward } from 'lucide-react';
+import { X, Play, Pause, Maximize, Minimize, RotateCcw, SkipBack, SkipForward } from 'lucide-react';
 import gsap from 'gsap';
 
 const OpenPlayVideo = ({ 
@@ -18,7 +18,6 @@ const OpenPlayVideo = ({
   const [isMuted, setIsMuted] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
@@ -74,6 +73,15 @@ const OpenPlayVideo = ({
     const handleLoadedMetadata = () => {
       setDuration(videoElement.duration);
       setIsLoading(false);
+      
+      // Auto-play if enabled
+      if (autoPlay) {
+        videoElement.play().then(() => {
+          setIsPlaying(true);
+        }).catch(() => {
+          setIsPlaying(false);
+        });
+      }
     };
 
     const handleTimeUpdate = () => {
@@ -98,11 +106,21 @@ const OpenPlayVideo = ({
       setError(null);
     };
 
+    const handlePlay = () => {
+      setIsPlaying(true);
+    };
+
+    const handlePause = () => {
+      setIsPlaying(false);
+    };
+
     videoElement.addEventListener('loadedmetadata', handleLoadedMetadata);
     videoElement.addEventListener('timeupdate', handleTimeUpdate);
     videoElement.addEventListener('ended', handleEnded);
     videoElement.addEventListener('error', handleError);
     videoElement.addEventListener('loadstart', handleLoadStart);
+    videoElement.addEventListener('play', handlePlay);
+    videoElement.addEventListener('pause', handlePause);
 
     return () => {
       videoElement.removeEventListener('loadedmetadata', handleLoadedMetadata);
@@ -110,22 +128,24 @@ const OpenPlayVideo = ({
       videoElement.removeEventListener('ended', handleEnded);
       videoElement.removeEventListener('error', handleError);
       videoElement.removeEventListener('loadstart', handleLoadStart);
+      videoElement.removeEventListener('play', handlePlay);
+      videoElement.removeEventListener('pause', handlePause);
     };
   }, [video, playlist.length, currentIndex, onVideoChange]);
 
   // Handle play/pause
   useEffect(() => {
     const videoElement = videoRef.current;
-    if (!videoElement) return;
+    if (!videoElement || isLoading) return;
 
-    if (isPlaying) {
+    if (isPlaying && videoElement.paused) {
       videoElement.play().catch(() => {
         setIsPlaying(false);
       });
-    } else {
+    } else if (!isPlaying && !videoElement.paused) {
       videoElement.pause();
     }
-  }, [isPlaying]);
+  }, [isPlaying, isLoading]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -144,6 +164,7 @@ const OpenPlayVideo = ({
           toggleFullscreen();
           break;
         case 'Escape':
+          e.preventDefault();
           if (isFullscreen) {
             exitFullscreen();
           } else {
@@ -156,14 +177,6 @@ const OpenPlayVideo = ({
         case 'ArrowRight':
           seekForward();
           break;
-        case 'ArrowUp':
-          e.preventDefault();
-          changeVolume(0.1);
-          break;
-        case 'ArrowDown':
-          e.preventDefault();
-          changeVolume(-0.1);
-          break;
       }
     };
 
@@ -174,15 +187,27 @@ const OpenPlayVideo = ({
   }, [isOpen, isFullscreen]);
 
   const handleClose = () => {
-    gsap.to(overlayRef.current, {
-      autoAlpha: 0,
-      duration: 0.3,
-      ease: 'power2.inOut',
-      onComplete: () => {
-        setIsPlaying(false);
-        onClose();
-      }
-    });
+    // Stop the video first
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.currentTime = 0;
+    }
+    setIsPlaying(false);
+    
+    // Animate out and close
+    if (overlayRef.current) {
+      gsap.to(overlayRef.current, {
+        autoAlpha: 0,
+        duration: 0.3,
+        ease: 'power2.inOut',
+        onComplete: () => {
+          onClose();
+        }
+      });
+    } else {
+      // Fallback if GSAP fails
+      onClose();
+    }
   };
 
   const togglePlayPause = () => {
@@ -193,14 +218,6 @@ const OpenPlayVideo = ({
     setIsMuted(!isMuted);
     if (videoRef.current) {
       videoRef.current.muted = !isMuted;
-    }
-  };
-
-  const changeVolume = (delta) => {
-    const newVolume = Math.max(0, Math.min(1, volume + delta));
-    setVolume(newVolume);
-    if (videoRef.current) {
-      videoRef.current.volume = newVolume;
     }
   };
 
@@ -270,17 +287,23 @@ const OpenPlayVideo = ({
       ref={overlayRef}
       className="fixed inset-0 z-[100] bg-black flex items-center justify-center"
       onMouseMove={handleMouseMove}
+      onClick={(e) => {
+        // Close if clicking on the background (not on video or controls)
+        if (e.target === e.currentTarget) {
+          handleClose();
+        }
+      }}
     >
       {/* Video Element */}
-      <div className="relative w-full h-full flex items-center justify-center">
+      <div className="relative w-full max-w-6xl aspect-video">
         <video
           ref={videoRef}
           src={video.path || video.videoPath}
           poster={video.thumbnailPath}
-          className="max-w-full max-h-full object-contain"
+          className="w-full h-full object-cover"
           muted={isMuted}
-          volume={volume}
           onClick={togglePlayPause}
+          autoPlay={autoPlay}
         />
 
         {/* Loading Spinner */}
@@ -317,9 +340,14 @@ const OpenPlayVideo = ({
                 )}
               </div>
               <button
-                onClick={handleClose}
-                className="rounded-full p-2 bg-black/50 hover:bg-black/70 text-gray-200 hover:text-white transition-colors"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  console.log('Close button clicked'); // Debug log
+                  handleClose();
+                }}
+                className="rounded-full p-2 bg-black/50 hover:bg-black/70 text-gray-200 hover:text-white transition-colors z-50 relative"
                 aria-label="Close"
+                type="button"
               >
                 <X size={24} />
               </button>
@@ -339,10 +367,10 @@ const OpenPlayVideo = ({
           )}
 
           {/* Bottom Controls */}
-          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
+          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/70 to-transparent p-6">
             {/* Progress Bar */}
             <div 
-              className="w-full h-2 bg-gray-600 rounded-full mb-4 cursor-pointer group"
+              className="w-full h-2 bg-gray-600 rounded-full mb-6 cursor-pointer group"
               onClick={handleProgressClick}
             >
               <div 
@@ -353,13 +381,13 @@ const OpenPlayVideo = ({
 
             {/* Control Buttons */}
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-6">
                 {/* Play/Pause */}
                 <button
                   onClick={togglePlayPause}
                   className="text-white hover:text-blue-400 transition-colors"
                 >
-                  {isPlaying ? <Pause size={24} /> : <Play size={24} />}
+                  {isPlaying ? <Pause size={28} /> : <Play size={28} />}
                 </button>
 
                 {/* Previous/Next (if playlist) */}
@@ -370,59 +398,32 @@ const OpenPlayVideo = ({
                       disabled={currentIndex === 0}
                       className="text-white hover:text-blue-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      <SkipBack size={20} />
+                      <SkipBack size={24} />
                     </button>
                     <button
                       onClick={() => onVideoChange && onVideoChange(Math.min(playlist.length - 1, currentIndex + 1))}
                       disabled={currentIndex === playlist.length - 1}
                       className="text-white hover:text-blue-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      <SkipForward size={20} />
+                      <SkipForward size={24} />
                     </button>
                   </>
                 )}
 
-                {/* Volume */}
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={toggleMute}
-                    className="text-white hover:text-blue-400 transition-colors"
-                  >
-                    {isMuted || volume === 0 ? <VolumeX size={20} /> : <Volume2 size={20} />}
-                  </button>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.1"
-                    value={isMuted ? 0 : volume}
-                    onChange={(e) => {
-                      const newVolume = parseFloat(e.target.value);
-                      setVolume(newVolume);
-                      setIsMuted(newVolume === 0);
-                      if (videoRef.current) {
-                        videoRef.current.volume = newVolume;
-                        videoRef.current.muted = newVolume === 0;
-                      }
-                    }}
-                    className="w-20 h-1 bg-gray-600 rounded-full appearance-none cursor-pointer slider"
-                  />
-                </div>
-
                 {/* Time */}
-                <span className="text-white text-sm font-mono">
+                <span className="text-white text-base font-mono">
                   {formatTime(currentTime)} / {formatTime(duration)}
                 </span>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-4">
                 {/* Restart */}
                 <button
                   onClick={() => seekToTime(0)}
                   className="text-white hover:text-blue-400 transition-colors"
                   title="Restart"
                 >
-                  <RotateCcw size={20} />
+                  <RotateCcw size={24} />
                 </button>
 
                 {/* Fullscreen */}
@@ -430,7 +431,7 @@ const OpenPlayVideo = ({
                   onClick={toggleFullscreen}
                   className="text-white hover:text-blue-400 transition-colors"
                 >
-                  {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
+                  {isFullscreen ? <Minimize size={24} /> : <Maximize size={24} />}
                 </button>
               </div>
             </div>
@@ -462,25 +463,6 @@ const OpenPlayVideo = ({
           </div>
         </div>
       )}
-
-      <style jsx>{`
-        .slider::-webkit-slider-thumb {
-          appearance: none;
-          width: 12px;
-          height: 12px;
-          border-radius: 50%;
-          background: #3b82f6;
-          cursor: pointer;
-        }
-        .slider::-moz-range-thumb {
-          width: 12px;
-          height: 12px;
-          border-radius: 50%;
-          background: #3b82f6;
-          cursor: pointer;
-          border: none;
-        }
-      `}</style>
     </div>
   );
 };

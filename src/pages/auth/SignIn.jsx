@@ -24,12 +24,6 @@ export default function SignIn() {
 
   const navigate = useNavigate();
 
-  const { signOut } = useClerk();
-
-  useEffect(() => {
-    signOut(); // remove karna hai baadme //
-  }, []);
-
   useEffect(() => {
     if (isSignedIn) {
       navigate('/dashboard');

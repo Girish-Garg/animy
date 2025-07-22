@@ -1,47 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { X, Plus } from 'lucide-react';
 import gsap from 'gsap';
-import axios from 'axios';
-import { useAuth } from '@clerk/clerk-react';
 import { toast } from 'sonner';
-
-const baseURL = import.meta.env.VITE_BACKEND_URL;
+import { apiUtils } from '@/lib/apiClient';
 
 const CreateAlbumOverlay = ({ isOpen, onClose, onAlbumCreated }) => {
   const overlayRef = useRef(null);
   const contentRef = useRef(null);
   const [albumName, setAlbumName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
-  const [authToken, setAuthToken] = useState(null);
-
-  const { getToken } = useAuth();
-
-  // Initialize token when component opens
-  useEffect(() => {
-    const initializeToken = async () => {
-      try {
-        const token = await getToken();
-        setAuthToken(token);
-      } catch (error) {
-        console.error('Failed to get auth token:', error);
-      }
-    };
-    if (isOpen) {
-      initializeToken();
-    }
-  }, [isOpen, getToken]);
-
-  // Function to refresh token when needed
-  const refreshToken = async () => {
-    try {
-      const token = await getToken();
-      setAuthToken(token);
-      return token;
-    } catch (error) {
-      console.error('Failed to refresh auth token:', error);
-      return null;
-    }
-  };
 
   useEffect(() => {
     if (isOpen && contentRef.current) {
@@ -105,19 +72,8 @@ const CreateAlbumOverlay = ({ isOpen, onClose, onAlbumCreated }) => {
     setIsCreating(true);
 
     try {
-      const token = authToken || await refreshToken();
-      if (!token) {
-        toast.error('Authentication failed. Please try again.');
-        return;
-      }
-
-      const response = await axios.post(`${baseURL}/album`, {
+      const response = await apiUtils.post('/album', {
         albumName: albumName.trim()
-      }, {
-        withCredentials: true,
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
       });
 
       if (response.data.success) {

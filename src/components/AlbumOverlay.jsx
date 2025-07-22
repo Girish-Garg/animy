@@ -1,8 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { X, FolderOpen, MoreVertical, Edit3, Trash2, Play } from 'lucide-react';
 import gsap from 'gsap';
-import axios from 'axios';
-const baseURL = import.meta.env.VITE_BACKEND_URL
+import { apiUtils } from '@/lib/apiClient';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,7 +9,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import './AlbumOverlay.css';
-import { useAuth } from '@clerk/clerk-react';
 import { toast, Toaster } from 'sonner';
 import CreateAlbumOverlay from './CreateAlbumOverlay';
 import OpenAlbumOverlay from './OpenAlbumOverlay';
@@ -32,20 +30,12 @@ const AlbumOverlay = ({ isOpen, onClose, initialAlbumId }) => {
   const [deletingAlbumId, setDeletingAlbumId] = useState(null);
   const [showCreateAlbum, setShowCreateAlbum] = useState(false);
 
-  const { getToken } = useAuth();
-
   // Function to fetch albums from API
   const fetchAlbums = async () => {
-    const token = await getToken();
     setLoading(true);
     setError(null);
     try {
-      const response = await axios.get(`${baseURL}/album/`, {
-        withCredentials: true,
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
+      const response = await apiUtils.get('/album/');
 
       if (response.data.success) {
         // Transform API data to match component structure
@@ -237,14 +227,8 @@ const AlbumOverlay = ({ isOpen, onClose, initialAlbumId }) => {
       setBlurEnabled(true);
       
       try {
-        const token = await getToken();
-        const response = await axios.patch(`${baseURL}/album/${albumId}/rename`, {
+        const response = await apiUtils.patch(`/album/${albumId}/rename`, {
           newAlbumName: editingAlbumName.trim()
-        }, {
-          withCredentials: true,
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
         });
 
         if (response.data.success) {
@@ -307,13 +291,7 @@ const AlbumOverlay = ({ isOpen, onClose, initialAlbumId }) => {
     setAlbums(optimisticAlbums);
     
     try {
-      const token = await getToken();
-      const response = await axios.delete(`${baseURL}/album/${albumId}`, {
-        withCredentials: true,
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
+      const response = await apiUtils.delete(`/album/${albumId}`);
 
       if (response.data.success) {
         // Transform API data to match component structure
@@ -380,7 +358,11 @@ const AlbumOverlay = ({ isOpen, onClose, initialAlbumId }) => {
         {/* Content Container */}
         <div
           ref={contentRef}
-          className="relative w-full max-w-5xl max-h-[90vh] overflow-auto rounded-2xl glassmorphism shadow-2xl"
+          className={`relative w-full rounded-2xl glassmorphism shadow-2xl ${
+            currentView === 'videos' 
+              ? 'max-w-5xl aspect-video overflow-auto' 
+              : 'max-w-5xl max-h-[90vh] overflow-auto'
+          }`}
         >
           {currentView === 'albums' ? (
             <>

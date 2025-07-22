@@ -10,6 +10,7 @@ import ProfilePage from './pages/ProfilePage';
 import ChatSideBar from './pages/ChatSideBar';
 import { useAuth } from '@clerk/clerk-react';
 import { useEffect } from 'react';
+import { useAuthInit } from './hooks/useAuth';
 
 function MyComponent() {
   const { getToken, userId, isSignedIn } = useAuth();
@@ -26,6 +27,9 @@ function MyComponent() {
 }
 
 function AppContent() {
+  // Initialize the auth manager
+  useAuthInit();
+  
   return (
     <div className="h-screen overflow-hidden">
       <MyComponent />
