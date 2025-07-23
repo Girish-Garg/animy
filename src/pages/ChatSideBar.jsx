@@ -63,6 +63,8 @@ function CustomTrigger() {
 }
 
 export default function Layout() {
+
+  const chatContainerRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -83,6 +85,10 @@ export default function Layout() {
   const [isThrottled, setIsThrottled] = useState(false);
   const [throttleTimeRemaining, setThrottleTimeRemaining] = useState(0);
   const throttleIntervalRef = useRef(null);
+
+  if(!isSignedIn && isLoaded) {
+    navigate('/signin');
+  }
 
   // Throttling constants
   const THROTTLE_DURATION = 10 * 60 * 1000; // 10 minutes in milliseconds
@@ -352,7 +358,7 @@ export default function Layout() {
         // Check if there are any prompts that are still processing and start polling
         if (data.chat && data.chat.prompts) {
           const processingPrompt = data.chat.prompts.find(prompt => 
-            !prompt.video && prompt.status !== 'failed' && prompt.status !== 'cancelled'
+            !prompt.video && prompt.status === "processing"
           );
           
           if (processingPrompt) {
@@ -489,9 +495,9 @@ export default function Layout() {
         setGeneratingMessage('');
         
         // Optionally refresh chat data to reflect the cancelled status
-        setTimeout(() => {
-          fetchChatData(activeChat, false);
-        }, 200);
+        // setTimeout(() => {
+        //   fetchChatData(activeChat, false);
+        // }, 200);
         
       } else {
         console.error('Failed to cancel video generation:', response.data.error);
@@ -588,7 +594,7 @@ export default function Layout() {
     } else if (isLoaded && !isSignedIn) {
       navigate('/signin');
     }
-  }, [isLoaded, isSignedIn, navigate]);
+  }, [isLoaded, isSignedIn]);
 
   // Handle URL parameters to load specific chat
   useEffect(() => {
@@ -933,6 +939,13 @@ const renderMenuItem = (item) => {
   };
   
   
+  // Auto-scroll to bottom when chat data changes
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [currentChatData?.prompts?.length]);
+
   return (
     <div className="flex h-screen w-full relative">
       <img src="/WholeBg.png" alt="" className="absolute inset-0 w-full h-full object-cover z-0" />
@@ -1023,10 +1036,13 @@ const renderMenuItem = (item) => {
               <div className="mt-6 flex flex-col h-[calc(100vh-100px)] overflow-hidden">
                 {activeChat ? (                  
                   <div className="flex flex-col h-full">
-                    <div className="flex-1 overflow-y-auto px-8 backdrop-blur-sm rounded-2xl py-4 custom-scrollbar">
+                    <div
+                      className="flex-1 overflow-y-auto px-8 backdrop-blur-sm rounded-2xl py-4 custom-scrollbar"
+                      ref={chatContainerRef}
+                    >
                       {isChatLoading ? (
                         <div className="flex flex-col items-center justify-center h-full text-center">
-                          <p className="text-gray-600">Loading chat...</p>
+                          <p className="text-gray-600"></p>
                         </div>
                       ) : currentChatData && currentChatData.prompts?.length > 0 ? (
                         <div className="space-y-4 pb-4">
@@ -1128,14 +1144,6 @@ const renderMenuItem = (item) => {
                       )}
                     </div>
                     <div className="flex-shrink-0 px-6 py-6">
-                      {isThrottled && (
-                        <div className="mb-4 p-3 bg-orange-900/20 border border-orange-600/30 rounded-lg text-center">
-                          <p className="text-orange-400 text-sm font-medium">limit active</p>
-                          <p className="text-orange-300 text-xs mt-1">
-                            Next prompt available in: {formatTimeRemaining(throttleTimeRemaining)}
-                          </p>
-                        </div>
-                      )}
                       <form onSubmit={handleSubmit} className="relative">
                         <input
                           type="text"
@@ -1183,7 +1191,7 @@ const renderMenuItem = (item) => {
                           <p className="text-2xl text-white mb-12">start creating</p>
                           {isThrottled && (
                             <div className="mb-6 p-4 bg-orange-900/20 border border-orange-600/30 rounded-lg text-center max-w-md mx-auto">
-                              <p className="text-orange-400 text-base font-medium">Rate limit active</p>
+                              <p className="text-orange-400 text-base font-medium">Limit active</p>
                               <p className="text-orange-300 text-sm mt-2">
                                 Next prompt available in: {formatTimeRemaining(throttleTimeRemaining)}
                               </p>
@@ -1229,6 +1237,7 @@ const renderMenuItem = (item) => {
                 isOpen={albumOverlayOpen}
                 onClose={() => {
                   setAlbumOverlayOpen(false);
+                  setActivePage(null);
                 }} 
                 albumData={selectedAlbum}
               />

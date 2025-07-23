@@ -1,5 +1,3 @@
-import { toast } from 'sonner';
-
 class AuthManager {
   constructor() {
     this.token = null;

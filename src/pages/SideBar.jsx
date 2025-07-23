@@ -9,8 +9,6 @@ import {
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
-  SidebarTrigger,
-  SidebarGroupLabel,
   SidebarInset,
   useSidebar,
 } from "@/components/ui/sidebar";
@@ -24,18 +22,15 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { 
-  HomeIcon, 
-  Disc,
+  HomeIcon,
   CreditCardIcon, 
-  SettingsIcon, 
   UserIcon,
   HelpCircleIcon,
-  SlashIcon,
-  NotebookIcon,
   BellIcon,
   PanelLeft,
   Folder,
 } from "lucide-react";
+import { useUser } from '@clerk/clerk-react';
 
 function CustomTrigger() {
   const { toggleSidebar } = useSidebar();
@@ -52,12 +47,16 @@ function CustomTrigger() {
 }
 
 export default function Layout() {
+  const { isSignedIn, isLoaded } = useUser();
   const navigate = useNavigate();
   const location = useLocation();
   const [activePage, setActivePage] = useState('dashboard');
   const [albumOverlayOpen, setAlbumOverlayOpen] = useState(false);
   const [selectedAlbum, setSelectedAlbum] = useState(null);
   
+  if (!isSignedIn && isLoaded) {
+    navigate('/signin');
+  }
   // Extract the current path without leading slash
   useEffect(() => {
     const path = location.pathname.replace(/^\//, '') || 'dashboard';
@@ -134,7 +133,7 @@ export default function Layout() {
       <div class="absolute inset-0 bg-black/60 z-10" />
         <SidebarProvider defaultOpen={true}>
             <Sidebar variant="sidebar" className="w-72 flex-shrink-0 backdrop-blur-[3.125vw] shadow-xl !border-0"
-            style={{background: 'linear-gradient(112deg, rgba(6, 11, 38, 0.94) 59.3%, rgba(26, 31, 55, 0.00) 100%);'}}>          
+            style={{background: 'linear-gradient(112deg, rgba(6, 11, 38, 0.94) 59.3%, rgba(26, 31, 55, 0.00) 100%)'}}>          
                 <SidebarHeader className="flex-row items-center justify-between w-full h-16 px-3 border-b border-blue-900/20 ">
                   <img src="/final.png" alt="Logo" className="w-16" />
                 </SidebarHeader>

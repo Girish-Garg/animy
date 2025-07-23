@@ -144,8 +144,6 @@ const AddToAlbumOverlay = ({
       );
 
       if (response.data.success) {
-        toast.success(`Video added to "${selectedAlbum.albumName}" successfully!`);
-        
         // Call the callback if provided
         if (onVideoAdded) {
           onVideoAdded(response.data);

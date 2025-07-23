@@ -88,15 +88,13 @@ const OpenAlbumOverlay = ({
         }));
         setVideos(transformedVideos);
         
-        toast.success('Video deleted successfully');
-        
         // Close the video player if the deleted video was being played
         if (selectedVideo?.id === video.id) {
           setShowVideoPlayer(false);
           setSelectedVideo(null);
         }
       } else {
-        toast.error('Failed to delete video');
+        toast.error('Failed to delete video. Please try again.');
       }
     } catch (err) {
       console.error('Error deleting video:', err);
@@ -221,8 +219,6 @@ const OpenAlbumOverlay = ({
           }));
           setVideos(transformedVideos);
           
-          toast.success('Video renamed successfully');
-          
           // Update the selected video if it was the one being renamed
           if (selectedVideo?.id === videoId) {
             const updatedVideo = transformedVideos.find(v => v.id === videoId);
@@ -233,7 +229,7 @@ const OpenAlbumOverlay = ({
         } else {
           // Revert optimistic update on failure
           setVideos(originalVideos);
-          toast.error('Failed to rename video');
+          toast.error('Failed to rename video. Please try again.');
         }
       } catch (err) {
         // Revert optimistic update on error
@@ -276,8 +272,6 @@ const OpenAlbumOverlay = ({
       
       // Clean up
       document.body.removeChild(link);
-      
-      toast.success('Download started!');
     } catch (err) {
       console.error('Error downloading video:', err);
       toast.error('Failed to download video. Please try again.');
@@ -347,7 +341,7 @@ const OpenAlbumOverlay = ({
       <div className="p-4 sm:p-6">
         {/* Loading State */}
         {loading && (
-          <div className="flex items-center justify-center py-12">
+          <div className="flex h-full w-full items-center justify-center py-12">
             <div className="flex flex-col items-center gap-3">
               <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
               <p className="text-gray-400 text-sm">Loading videos...</p>
@@ -363,7 +357,6 @@ const OpenAlbumOverlay = ({
                 <X className="w-6 h-6 text-red-400" />
               </div>
               <p className="text-red-400 font-medium">Error loading videos</p>
-              <p className="text-gray-400 text-sm">{error}</p>
               <button
                 onClick={fetchAlbumVideos}
                 className="mt-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors"
@@ -376,7 +369,7 @@ const OpenAlbumOverlay = ({
 
         {/* Videos Grid */}
         {!loading && !error && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+          <div className="grid grid-rows-3 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {videos.map((video, index) => (
             <div
               key={video.id || index}
@@ -465,9 +458,6 @@ const OpenAlbumOverlay = ({
                         autoFocus
                         maxLength={50}
                       />
-                      {renamingVideoId === video.id && (
-                        <div className="ml-2 w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
-                      )}
                     </div>
                   ) : (
                     <p className="text-sm font-medium text-white truncate flex-1 mr-2">
@@ -492,29 +482,8 @@ const OpenAlbumOverlay = ({
                       className="bg-[#1A1F37] border-blue-900/30 shadow-lg min-w-[160px] w-fit z-[60]"
                       sideOffset={5}
                     >
-                      <DropdownMenuItem
-                        className={`group text-gray-300 hover:!text-white hover:!bg-blue-900/30 focus:!bg-blue-900/30 focus:!text-white cursor-pointer ${renamingVideoId === video.id ? 'opacity-50 pointer-events-none' : ''}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (renamingVideoId !== video.id) {
-                            handleRenameVideo(video);
-                          }
-                        }}
-                      >
-                        {renamingVideoId === video.id ? (
-                          <>
-                            <div className="mr-2 h-4 w-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-                            Renaming...
-                          </>
-                        ) : (
-                          <>
-                            <Edit3 className="mr-2 h-4 w-4 text-gray-300 group-hover:!text-white" />
-                            Rename
-                          </>
-                        )}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        className="group text-gray-300 hover:!text-white hover:!bg-green-900/30 focus:!bg-green-900/30 focus:!text-white cursor-pointer"
+                        <DropdownMenuItem
+                        className="group text-gray-300 hover:!text-white hover:!bg-blue-900/30 focus:!bg-blue-900/30 focus:!text-white cursor-pointer"
                         onClick={(e) => {
                           e.stopPropagation();
                           handleDownloadVideo(video);
@@ -524,48 +493,31 @@ const OpenAlbumOverlay = ({
                         Download
                       </DropdownMenuItem>
                       <DropdownMenuItem
+                        className={`group text-gray-300 hover:!text-white hover:!bg-blue-900/30 focus:!bg-blue-900/30 focus:!text-white cursor-pointer ${renamingVideoId === video.id ? 'opacity-50 pointer-events-none' : ''}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (renamingVideoId !== video.id) {
+                            handleRenameVideo(video);
+                          }
+                        }}
+                      >
+                        <Edit3 className="mr-2 h-4 w-4 text-gray-300 group-hover:!text-white" />
+                        Rename
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
                         className={`text-red-400 hover:!text-red-400 hover:!bg-red-900/30 cursor-pointer ${deletingVideoId === video.id ? 'opacity-50 pointer-events-none' : ''}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           handleDeleteVideo(video);
                         }}
                       >
-                        {deletingVideoId === video.id ? (
-                          <>
-                            <div className="mr-2 h-4 w-4 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
-                            Deleting...
-                          </>
-                        ) : (
-                          <>
-                            <Trash2 className="mr-2 h-4 w-4 text-red-400" />
-                            Delete
-                          </>
-                        )}
+                        <Trash2 className="mr-2 h-4 w-4 text-red-400" />
+                        Delete
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
               </div>
-
-              {/* Delete loading overlay */}
-              {deletingVideoId === video.id && (
-                <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-50">
-                  <div className="flex flex-col items-center gap-3">
-                    <div className="w-8 h-8 border-2 border-red-400 border-t-transparent rounded-full animate-spin"></div>
-                    <p className="text-white text-sm font-medium">Deleting video...</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Rename loading overlay */}
-              {renamingVideoId === video.id && (
-                <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-50">
-                  <div className="flex flex-col items-center gap-3">
-                    <div className="w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
-                    <p className="text-white text-sm font-medium">Renaming video...</p>
-                  </div>
-                </div>
-              )}
             </div>
           ))}
           </div>

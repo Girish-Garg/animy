@@ -82,18 +82,6 @@ const AlbumOverlay = ({ isOpen, onClose, initialAlbumId }) => {
     }
   }, [isOpen, initialAlbumId, albums]);
 
-  // Create placeholder albums for demo
-  const placeholderAlbums = Array(6).fill().map((_, i) => ({
-    id: `album-${i}`,
-    albumName: `Album ${i + 1}`,
-    coverImage: '',
-    videos: Array(Math.floor(Math.random() * 6) + 2).fill().map((_, j) => ({
-      id: `video-${i}-${j}`,
-      path: '',
-      title: `Video ${j + 1}`,
-    })),
-  }));
-
   // For album list view - use real data if available, otherwise show empty
   const allAlbums = loading ? [] : albums;  // Reset view when overlay closes
   useEffect(() => {
@@ -250,9 +238,6 @@ const AlbumOverlay = ({ isOpen, onClose, initialAlbumId }) => {
           // Update with real data from server
           setAlbums(transformedAlbums);
 
-          // Show success toast
-          toast.success('Album renamed successfully!');
-
           console.log('Album renamed successfully');
         } else {
           // Revert optimistic update on failure
@@ -312,9 +297,6 @@ const AlbumOverlay = ({ isOpen, onClose, initialAlbumId }) => {
         // Update with real data from server
         setAlbums(transformedAlbums);
 
-        // Show success toast
-        toast.success(`Album "${albumName}" deleted successfully!`);
-
         console.log('Album deleted successfully');
       } else {
         // Revert optimistic update on failure
@@ -360,7 +342,7 @@ const AlbumOverlay = ({ isOpen, onClose, initialAlbumId }) => {
           ref={contentRef}
           className={`relative w-full rounded-2xl glassmorphism shadow-2xl ${
             currentView === 'videos' 
-              ? 'max-w-5xl aspect-video overflow-auto' 
+              ? 'max-w-5xl overflow-auto' 
               : 'max-w-5xl max-h-[90vh] overflow-auto'
           }`}
         >
@@ -418,7 +400,6 @@ const AlbumOverlay = ({ isOpen, onClose, initialAlbumId }) => {
                         <X className="w-6 h-6 text-red-400" />
                       </div>
                       <p className="text-red-400 font-medium">Error loading albums</p>
-                      <p className="text-gray-400 text-sm">{error}</p>
                       <button
                         onClick={fetchAlbums}
                         className="mt-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors"
@@ -502,16 +483,6 @@ const AlbumOverlay = ({ isOpen, onClose, initialAlbumId }) => {
                             <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                               <div className="bg-blue-500/80 p-3 rounded-full">
                                 <FolderOpen size={24} className="text-white" />
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Delete loading overlay */}
-                          {deletingAlbumId === album.id && (
-                            <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-10">
-                              <div className="flex flex-col items-center gap-2">
-                                <div className="w-6 h-6 border-2 border-red-400 border-t-transparent rounded-full animate-spin"></div>
-                                <span className="text-red-400 text-xs font-medium">Deleting...</span>
                               </div>
                             </div>
                           )}

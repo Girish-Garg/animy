@@ -77,9 +77,6 @@ const CreateAlbumOverlay = ({ isOpen, onClose, onAlbumCreated }) => {
       });
 
       if (response.data.success) {
-        toast.success('Album created successfully!');
-        
-        // Call the callback to refresh albums list
         if (onAlbumCreated) {
           onAlbumCreated();
         }

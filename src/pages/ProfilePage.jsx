@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useUser } from '@clerk/clerk-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,7 +9,7 @@ import { Loader2Icon, User, Mail, Shield, Bell, LogOut, Camera } from 'lucide-re
 import { Toaster, toast } from 'sonner';
 
 export default function ProfilePage() {
-  const { user, isLoaded } = useUser();
+  const { user, isLoaded, isSignedIn } = useUser();
   const [isUpdating, setIsUpdating] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [showPasswordForm, setShowPasswordForm] = useState(false);
@@ -23,6 +23,10 @@ export default function ProfilePage() {
     newPassword: '',
     confirmPassword: '',
   });
+
+  if (!isSignedIn && isLoaded) {
+    navigate('/signin');
+  }
 
   React.useEffect(() => {
     if (isLoaded && user) {
@@ -50,11 +54,13 @@ export default function ProfilePage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsUpdating(true);
-    
+    if (!isLoaded) return;
+    console.log(user);
+    console.log(formData);
     try {
       await user.update({
         firstName: formData.firstName,
-        lastName: formData.lastName
+        lastName: formData.lastName,
       });
       toast.success('Profile updated successfully');
     } catch (error) {
@@ -118,9 +124,20 @@ export default function ProfilePage() {
     }
   };
 
-  const handleUpdateProfileImage = () => {
-    toast.info('Image upload functionality would be implemented here');
-  };
+    const fileInputRef = useRef();
+    const handleUpdateProfileImage = (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      if (!user) return;
+      toast.promise(
+        user.setProfileImage({ file }),
+        {
+          loading: 'Uploading image...',
+          success: 'Profile image updated!',
+          error: 'Failed to update profile image',
+        }
+      );
+    };
 
   if (!isLoaded) {
     return (
@@ -145,9 +162,17 @@ export default function ProfilePage() {
                 <AvatarFallback className="bg-gradient-to-br from-blue-800 to-blue-900 text-lg">
                   {user.firstName?.[0]}{user.lastName?.[0] || ''}
                 </AvatarFallback>
-              </Avatar>              
-              <button 
-                onClick={handleUpdateProfileImage}
+              </Avatar>
+              <input
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                ref={fileInputRef}
+                onChange={handleUpdateProfileImage}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current && fileInputRef.current.click()}
                 className="absolute bottom-0 right-0 rounded-full bg-blue-600 p-1.5 shadow-lg border border-blue-500 opacity-0 group-hover/avatar:opacity-100 transform translate-x-0 translate-y-0 group-hover/avatar:translate-y-1 transition-all duration-200 hover:bg-blue-500 hover:cursor-pointer"
               >
                 <Camera size={14} className="text-white" />
@@ -157,11 +182,12 @@ export default function ProfilePage() {
               <h2 className="text-xl font-medium text-white group-hover:text-blue-100">{user.fullName}</h2>
               <p className="text-sm text-blue-300/80 group-hover:text-blue-200/90 transition-colors">{user.primaryEmailAddress?.emailAddress}</p>
             </div>
-            <div className="flex items-center">              <a 
+            <div className="flex items-center">           
+              <a
                 href="/signin" 
                 className="flex items-center gap-2 px-4 py-2 rounded-lg text-red-400 hover:bg-red-900/30 hover:text-red-200 transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98] hover:shadow-md hover:shadow-red-900/10 hover:cursor-pointer"
               >
-                <LogOut size={18} className="transform group-hover:rotate-12 transition-transform" />
+                <LogOut size={18} />
                 <span>Sign Out</span>
               </a>
             </div>
@@ -173,13 +199,13 @@ export default function ProfilePage() {
         >
           <Tabs defaultValue="personal" className="w-full" onValueChange={(value) => setActiveTab(value)}>            
             <TabsList className="h-12 grid grid-cols-2 md:grid-cols-4 gap-2 bg-[#131631]/80 p-1 rounded-xl border border-blue-900/20 mb-6">              
-            <TabsTrigger 
+              <TabsTrigger 
                 value="personal" 
                 className="flex items-center gap-2 data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-blue-900/20 rounded-lg text-blue-200 hover:text-white hover:bg-blue-900/30 transition-all duration-300 py-2 transform hover:scale-[1.02] active:scale-[0.98] hover:cursor-pointer"
               >
                 <User size={18} className="text-blue-400 data-[state=active]:text-white" />
                 <span className="hidden sm:inline">Personal Info</span>
-              </TabsTrigger>              
+              </TabsTrigger>
               <TabsTrigger 
                 value="email" 
                 className="flex items-center gap-2 data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-blue-900/20 rounded-lg text-blue-200 hover:text-white hover:bg-blue-900/30 transition-all duration-300 py-2 transform hover:scale-[1.02] active:scale-[0.98] hover:cursor-pointer"
@@ -275,7 +301,7 @@ export default function ProfilePage() {
                 <h3 className="text-xl font-medium text-white mb-6 border-b border-blue-900/30 pb-2 inline-block">Security</h3>
                 <div className="space-y-6">
                   <div className="p-4 bg-[#131631]/50 rounded-lg border border-blue-900/30">
-                    <div className="flex justify-between items-center mb-4">
+                    <div className="flex justify-between items-center">
                       <div>
                         <p className="text-white font-medium">Password</p>
                         <p className="text-xs text-gray-300 mt-1">Change your account password</p>
@@ -370,17 +396,6 @@ export default function ProfilePage() {
                         </div>
                       </form>
                     )}
-                  </div>
-                  
-                  <div className="mt-6 pt-6 border-t border-blue-900/30">
-                    <h4 className="text-lg font-medium text-white mb-4">Two-Factor Authentication</h4>
-                    <p className="text-gray-300 mb-4">Add an extra layer of security to your account</p>                  
-                    <Button 
-                      className="bg-[#131631] hover:bg-[#1a1f37] text-blue-300 hover:text-blue-200 border border-blue-900/30 hover:border-blue-700/40 transform hover:scale-[1.02] active:scale-[0.98] rounded-xl h-12 transition-all duration-300 shadow-md hover:shadow-blue-900/20 hover:cursor-pointer"
-                      variant="outline"
-                    >
-                      Enable 2FA
-                    </Button>
                   </div>
                 </div>
               </div>

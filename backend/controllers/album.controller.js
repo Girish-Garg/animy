@@ -1,6 +1,7 @@
 import axios from "axios";
 import Album from "../schema/album.schema.js";
 import User from "../schema/user.schema.js";
+import Prompt from "../schema/prompt.schema.js";
 
 export const createAlbum = async (req, res) => {
     try {
@@ -55,6 +56,11 @@ export const addToAlbum = async (req, res) => {
         if (!videoRes.data || !thumbnailRes.data) {
             return res.status(500).json({ success: false, error: "Failed to move video or thumbnail" });
         }
+        await Prompt.findOneAndUpdate(
+            { chatId: chatId, 'video.videoPath': video.videoPath , 'video.thumbnailPath': video.thumbnailPath },
+            { $set: { 'video.videoPath': videoRes.data.newUrl, 'video.thumbnailPath': thumbnailRes.data.newUrl } },
+            { new: true }
+        );
         const videoToAdd = {
             name: name,
             videoPath: videoRes.data.newUrl,

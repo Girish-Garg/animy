@@ -295,7 +295,7 @@ const OpenPlayVideo = ({
       }}
     >
       {/* Video Element */}
-      <div className="relative w-full max-w-6xl aspect-video">
+      <div className="relative w-full max-w-6xl h-full">
         <video
           ref={videoRef}
           src={video.path || video.videoPath}
@@ -345,7 +345,7 @@ const OpenPlayVideo = ({
                   console.log('Close button clicked'); // Debug log
                   handleClose();
                 }}
-                className="rounded-full p-2 bg-black/50 hover:bg-black/70 text-gray-200 hover:text-white transition-colors z-50 relative"
+                className="rounded-full p-2 bg-transparent hover:bg-zinc-500/50 text-gray-200 hover:text-white hover:cursor-pointer transition-colors z-50 relative"
                 aria-label="Close"
                 type="button"
               >
@@ -385,7 +385,7 @@ const OpenPlayVideo = ({
                 {/* Play/Pause */}
                 <button
                   onClick={togglePlayPause}
-                  className="text-white hover:text-blue-400 transition-colors"
+                  className="text-white hover:text-blue-400 transition-colors hover:cursor-pointer"
                 >
                   {isPlaying ? <Pause size={28} /> : <Play size={28} />}
                 </button>
@@ -416,11 +416,11 @@ const OpenPlayVideo = ({
                 </span>
               </div>
 
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-5">
                 {/* Restart */}
                 <button
                   onClick={() => seekToTime(0)}
-                  className="text-white hover:text-blue-400 transition-colors"
+                  className="text-white hover:text-blue-400 transition-colors hover:cursor-pointer"
                   title="Restart"
                 >
                   <RotateCcw size={24} />
@@ -429,7 +429,7 @@ const OpenPlayVideo = ({
                 {/* Fullscreen */}
                 <button
                   onClick={toggleFullscreen}
-                  className="text-white hover:text-blue-400 transition-colors"
+                  className="text-white hover:text-blue-400 transition-colors hover:cursor-pointer"
                 >
                   {isFullscreen ? <Minimize size={24} /> : <Maximize size={24} />}
                 </button>

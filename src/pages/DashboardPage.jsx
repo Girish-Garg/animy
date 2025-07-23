@@ -8,12 +8,15 @@ import AlbumOverlay from '../components/AlbumOverlay';
 import { apiUtils } from '@/lib/apiClient';
 
 export default function DashboardPage() {
-  const { user } = useUser();
+  const { user, isSignedIn, isLoaded } = useUser();
   const navigate = useNavigate();
   const [dashboardData, setDashboardData] = useState({
     chats: [],
     albums: []
   });
+  if (!isSignedIn && isLoaded) {
+    navigate('/signin');
+  }
   const [loading, setLoading] = useState(true);
   const [inputValue, setInputValue] = useState('');
   const [albumOverlayOpen, setAlbumOverlayOpen] = useState(false);
@@ -96,27 +99,27 @@ export default function DashboardPage() {
     const remainingSeconds = seconds % 60;
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
+
+  const fetchDashboardData = async () => {
+    try {
+      const response = await apiUtils.get('/dashboard');
+        
+      if (response.data.success) {
+        setDashboardData({
+          chats: response.data.chats || [],
+          albums: response.data.albums || []
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+        // Keep empty state on error
+    } finally {
+      setLoading(false);
+    }
+  };
   
   useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
-        const response = await apiUtils.get('/dashboard');
-        
-        if (response.data.success) {
-          setDashboardData({
-            chats: response.data.chats || [],
-            albums: response.data.albums || []
-          });
-        }
-      } catch (error) {
-        console.error('Error fetching dashboard data:', error);
-        // Keep empty state on error
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    // Only start loading when user is available
+    
     if (user) {
       setLoading(true);
       fetchDashboardData();
@@ -172,8 +175,6 @@ export default function DashboardPage() {
       }
     };
   }, []);
-
-  const percentage = 90;
   
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -539,6 +540,7 @@ export default function DashboardPage() {
         onClose={() => {
           setAlbumOverlayOpen(false);
           setSelectedAlbumId(null);
+          fetchDashboardData();
         }}
         initialAlbumId={selectedAlbumId}
       />
