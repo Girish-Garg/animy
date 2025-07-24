@@ -9,6 +9,7 @@ import BillingPage from './pages/BillingPage';
 import ProfilePage from './pages/ProfilePage';
 import ChatSideBar from './pages/ChatSideBar';
 import { useAuthInit } from './hooks/useAuth';
+import '../sentry.js';
 
 function AppContent() {
   useAuthInit();

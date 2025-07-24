@@ -1,7 +1,7 @@
 import axios from 'axios';
 import authManager from './authManager';
 import { toast } from 'sonner';
-
+import * as Sentry from "@sentry/react";
 const baseURL = import.meta.env.VITE_BACKEND_URL;
 
 // Create axios instance
@@ -16,11 +16,13 @@ apiClient.interceptors.request.use(
   async (config) => {
     try {
       const token = await authManager.getValidToken();
+      Sentry.captureMessage(token);
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
       }
       return config;
     } catch (error) {
+      Sentry.captureException(error);
       return config;
     }
   },
