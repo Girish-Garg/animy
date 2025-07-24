@@ -534,19 +534,19 @@ export default function Layout() {
   useEffect(() => {
     const chatId = searchParams.get('id');
     const promptId = searchParams.get('promptId');
-    
+
     if (chatId && location.pathname.includes('/chat/chat') && isLoaded && isSignedIn && isAuthInitialized) {
       setActiveChat(chatId);
       setActivePage('chat');
       localStorage.setItem('animy_last_chat', chatId);
-      
+
       // Add a delay to ensure auth manager is initialized
-      setTimeout(() => {
-        fetchChatData(chatId);
-        
+      setTimeout(async () => {
+        // Fetch chat data and check for processing prompt
+        await fetchChatData(chatId);
+
         // If we have a specific promptId (likely from Dashboard), start polling for it
         if (promptId) {
-          console.log('Starting polling for prompt from URL:', promptId);
           setTimeout(() => {
             startPolling(chatId, promptId);
             // Clean up the URL by removing the promptId parameter
@@ -554,10 +554,21 @@ export default function Layout() {
             newUrl.searchParams.delete('promptId');
             window.history.replaceState({}, '', newUrl);
           }, 500); // Additional delay to ensure chat data is loaded
+        } else {
+          // If no promptId in URL, check if any prompt is processing and resume polling
+          // Use the latest chat data from state
+          setTimeout(() => {
+            if (currentChatData && currentChatData.prompts) {
+              const processingPrompt = currentChatData.prompts.find(prompt => !prompt.video && prompt.status === 'processing');
+              if (processingPrompt) {
+                startPolling(chatId, processingPrompt._id);
+              }
+            }
+          }, 500);
         }
       }, 300);
     }
-  }, [searchParams, location.pathname, isLoaded, isSignedIn, isAuthInitialized]);
+  }, [searchParams, location.pathname, isLoaded, isSignedIn, isAuthInitialized, currentChatData]);
 
   useEffect(() => {
     const lastChatId = localStorage.getItem('animy_last_chat');
