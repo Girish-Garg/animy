@@ -8,14 +8,13 @@ import albumRoutes from "./routes/album.routes.js";
 import { handleValidationErrors } from "./middleware/validation.middleware.js";
 import connectDB from "./db/connection.js";
 import { clerkMiddleware } from "@clerk/express";
-const Sentry = require("@sentry/node");
+import * as Sentry from "@sentry/node";
 
 Sentry.init({
   dsn: "https://7602a9b3f72e16262ed8a1433b43489d@o4509724094431232.ingest.us.sentry.io/4509724099346432",
+  sendDefaultPii: true,
   tracesSampleRate: 0.2,
 });
-app.use(Sentry.Handlers.requestHandler());
-app.use(Sentry.Handlers.tracingHandler());
 
 dotenv.config();
 connectDB();
@@ -44,8 +43,6 @@ app.use((error, req, res, next) => {
     message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
   });
 });
-
-app.use(Sentry.Handlers.errorHandler());
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {

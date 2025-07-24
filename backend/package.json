@@ -12,6 +12,7 @@
   "dependencies": {
     "@clerk/express": "^1.7.0",
     "@sentry/node": "^9.41.0",
+    "@sentry/profiling-node": "^9.41.0",
     "axios": "^1.10.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
