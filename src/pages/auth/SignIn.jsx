@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useSignIn, useUser, useClerk } from '@clerk/clerk-react';
+import { useSignIn, useUser } from '@clerk/clerk-react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
   Card,
@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Toaster, toast } from 'sonner';
-import { Loader2Icon, LockIcon, MailIcon, LogInIcon } from "lucide-react"
+import { Loader2Icon, LockIcon, MailIcon } from "lucide-react"
 import googleSvg from "@/assets/google-logo.svg";
 
 export default function SignIn() {
@@ -47,7 +47,7 @@ export default function SignIn() {
       const completeSignIn = await signIn.create({
         identifier: emailAddress,
         password,
-      })
+      });
       if(completeSignIn.status !== 'complete') {
         toast.error('Sign in failed, please try again.');
       }
@@ -56,7 +56,6 @@ export default function SignIn() {
         navigate('/dashboard');
       }
     } catch (err) {
-      console.log("Sign in error:", err);
       toast.error(err.errors ? err.errors[0].longMessage : 'An error occurred during sign in.');
       return;
     } finally {

@@ -87,7 +87,6 @@ const CreateAlbumOverlay = ({ isOpen, onClose, onAlbumCreated }) => {
         toast.error('Failed to create album. Please try again.');
       }
     } catch (error) {
-      console.error('Error creating album:', error);
       toast.error('Failed to create album. Please check your connection and try again.');
     } finally {
       setIsCreating(false);

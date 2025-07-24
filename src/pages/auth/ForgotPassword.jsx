@@ -61,14 +61,12 @@ export default function ForgotPassword() {
         code: resetCode,
         password: newPassword,
       });
-
       if (result.status === 'complete') {
         toast.success('Password reset successfully. You can now log in.');
         setTimeout(() => {
           navigate('/signin');
         }, 1000);
-      } 
-      if (result.status !== 'complete') {
+      } else {
         toast.error('Something went wrong. Please try again.');
       }
     } catch (err) {

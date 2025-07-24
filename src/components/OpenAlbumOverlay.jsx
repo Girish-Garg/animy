@@ -58,7 +58,6 @@ const OpenAlbumOverlay = ({
         toast.error('Failed to load album videos');
       }
     } catch (err) {
-      console.error('Error fetching album videos:', err);
       setError('Failed to fetch album videos. Please try again.');
       toast.error('Failed to load album videos. Please check your connection.');
     } finally {
@@ -97,7 +96,6 @@ const OpenAlbumOverlay = ({
         toast.error('Failed to delete video. Please try again.');
       }
     } catch (err) {
-      console.error('Error deleting video:', err);
       toast.error('Failed to delete video. Please try again.');
     } finally {
       setDeletingVideoId(null);
@@ -232,9 +230,7 @@ const OpenAlbumOverlay = ({
           toast.error('Failed to rename video. Please try again.');
         }
       } catch (err) {
-        // Revert optimistic update on error
         setVideos(originalVideos);
-        console.error('Error renaming video:', err);
         toast.error('Failed to rename video. Please try again.');
       } finally {
         setRenamingVideoId(null);
@@ -273,7 +269,6 @@ const OpenAlbumOverlay = ({
       // Clean up
       document.body.removeChild(link);
     } catch (err) {
-      console.error('Error downloading video:', err);
       toast.error('Failed to download video. Please try again.');
     }
   };

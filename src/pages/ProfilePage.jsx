@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { useUser } from '@clerk/clerk-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { useClerk, useUser } from '@clerk/clerk-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -9,6 +9,7 @@ import { Loader2Icon, User, Mail, Shield, Bell, LogOut, Camera } from 'lucide-re
 import { Toaster, toast } from 'sonner';
 
 export default function ProfilePage() {
+  const { signOut } = useClerk();
   const { user, isLoaded, isSignedIn } = useUser();
   const [isUpdating, setIsUpdating] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
@@ -24,11 +25,13 @@ export default function ProfilePage() {
     confirmPassword: '',
   });
 
-  if (!isSignedIn && isLoaded) {
-    navigate('/signin');
-  }
+  useEffect(() => {
+    if (!isSignedIn && isLoaded) {
+      navigate('/signin');
+    }
+  }, [isSignedIn, isLoaded]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (isLoaded && user) {
       setFormData({
         firstName: user.firstName || '',
@@ -55,8 +58,6 @@ export default function ProfilePage() {
     e.preventDefault();
     setIsUpdating(true);
     if (!isLoaded) return;
-    console.log(user);
-    console.log(formData);
     try {
       await user.update({
         firstName: formData.firstName,
@@ -64,37 +65,33 @@ export default function ProfilePage() {
       });
       toast.success('Profile updated successfully');
     } catch (error) {
-      console.error('Error updating profile:', error);
       toast.error('Failed to update profile');
     } finally {
       setIsUpdating(false);
     }
   };
 
+  const handleSignOut = async () => {
+    signOut();
+  };
+
   const handlePasswordSubmit = async (e) => {
     e.preventDefault();
-    
     if (passwordData.newPassword !== passwordData.confirmPassword) {
       toast.error('New passwords do not match');
       return;
     }
-
     if (passwordData.newPassword.length < 8) {
       toast.error('New password must be at least 8 characters long');
       return;
     }
-
     setIsChangingPassword(true);
-    
     try {
-      // For Clerk, we need to use the session's updatePassword method
-      // First, we need to verify the current password
       await user.updatePassword({
         newPassword: passwordData.newPassword,
         currentPassword: passwordData.currentPassword,
         signOutOfOtherSessions: true
       });
-      
       toast.success('Password updated successfully');
       setPasswordData({
         currentPassword: '',
@@ -103,9 +100,6 @@ export default function ProfilePage() {
       });
       setShowPasswordForm(false);
     } catch (error) {
-      console.error('Error updating password:', error);
-      
-      // Handle different Clerk error types
       if (error.message?.includes('additional verification')) {
         toast.error('Additional verification required. Please check your email or try again later.');
       } else if (error.errors?.[0]?.code === 'form_password_incorrect') {
@@ -124,20 +118,19 @@ export default function ProfilePage() {
     }
   };
 
-    const fileInputRef = useRef();
-    const handleUpdateProfileImage = (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      if (!user) return;
-      toast.promise(
-        user.setProfileImage({ file }),
-        {
-          loading: 'Uploading image...',
-          success: 'Profile image updated!',
-          error: 'Failed to update profile image',
-        }
-      );
-    };
+  const fileInputRef = useRef();
+  const handleUpdateProfileImage = (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+    toast.promise(
+      user.setProfileImage({ file }),
+      {
+        loading: 'Uploading image...',
+        success: 'Profile image updated!',
+        error: 'Failed to update profile image',
+      }
+    );
+  };
 
   if (!isLoaded) {
     return (
@@ -183,13 +176,13 @@ export default function ProfilePage() {
               <p className="text-sm text-blue-300/80 group-hover:text-blue-200/90 transition-colors">{user.primaryEmailAddress?.emailAddress}</p>
             </div>
             <div className="flex items-center">           
-              <a
-                href="/signin" 
+              <button
+                onClick={handleSignOut}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg text-red-400 hover:bg-red-900/30 hover:text-red-200 transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98] hover:shadow-md hover:shadow-red-900/10 hover:cursor-pointer"
               >
                 <LogOut size={18} />
                 <span>Sign Out</span>
-              </a>
+              </button>
             </div>
           </div>
         </div>

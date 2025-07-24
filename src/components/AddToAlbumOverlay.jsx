@@ -144,12 +144,9 @@ const AddToAlbumOverlay = ({
       );
 
       if (response.data.success) {
-        // Call the callback if provided
         if (onVideoAdded) {
           onVideoAdded(response.data);
         }
-        
-        // Close the overlay after successful addition
         handleClose();
       } else {
         toast.error('Failed to add video to album');
@@ -247,7 +244,6 @@ const AddToAlbumOverlay = ({
                       key={album._id || album.id}
                       className="text-gray-300 hover:!text-white hover:!bg-blue-900/30 focus:!bg-blue-900/30 focus:!text-white cursor-pointer"
                       onClick={() => {
-                        console.log('Selecting album:', album); // Debug log
                         setSelectedAlbum(album);
                         setDropdownOpen(false);
                       }}

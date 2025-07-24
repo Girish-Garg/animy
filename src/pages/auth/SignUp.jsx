@@ -4,7 +4,6 @@ import { useNavigate, Link } from 'react-router-dom';
 import {
   Card,
   CardContent,
-  CardDescription,
   CardFooter,
   CardHeader,
   CardTitle,
@@ -19,7 +18,7 @@ import {
   InputOTPSlot,
 } from "@/components/ui/input-otp"
 import { Toaster, toast } from 'sonner';
-import { AlertCircleIcon, ArrowLeft, Loader2Icon } from "lucide-react"
+import { ArrowLeft, Loader2Icon } from "lucide-react"
 import googleSvg from "@/assets/google-logo.svg";
 
 export default function SignUp() {
@@ -48,7 +47,6 @@ export default function SignUp() {
       await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
       setPendingVerification(true);
     } catch (err) {
-      console.log(JSON.stringify(err, null, 2));
       toast.error(err.errors ? err.errors[0].longMessage : 'An error occurred during sign up.');
     } finally {
       setIsLoading(false);
@@ -68,7 +66,6 @@ export default function SignUp() {
         redirectUrlComplete: "/dashboard"
       });
     } catch (err) {
-      console.log(JSON.stringify(err, null, 2));
       toast.error(err.errors ? err.errors[0].longMessage : 'An error occurred with Google sign up.');
     }
   }
@@ -85,18 +82,14 @@ export default function SignUp() {
     try {
       const completeSignUp = await signUp.attemptEmailAddressVerification({ code });
       if (completeSignUp.status !== 'complete') {
-        console.log(JSON.stringify(completeSignUp, null, 2));
         toast.error('Verification failed, please try again.');
         return;
       }
-
       if (completeSignUp.status === 'complete') {
         await setActive({ session: completeSignUp.createdSessionId });
-        console.log(JSON.stringify(completeSignUp, null, 2));
         navigate('/dashboard');
       }
     } catch (err) {
-      console.log(JSON.stringify(err, null, 2));
       toast.error(err.errors ? err.errors[0].longMessage : 'An error occurred during email verification.');
     } finally {
       setIsLoading(false);
@@ -112,10 +105,8 @@ export default function SignUp() {
 
     try {
       await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
-
       toast.success('Verification code resent to your email');
     } catch (err) {
-      console.log(JSON.stringify(err, null, 2));
       toast.error(err.errors ? err.errors[0].longMessage : 'Failed to resend verification code.');
     } finally {
       setIsLoading(false);

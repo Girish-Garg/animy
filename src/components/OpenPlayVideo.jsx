@@ -342,7 +342,6 @@ const OpenPlayVideo = ({
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  console.log('Close button clicked'); // Debug log
                   handleClose();
                 }}
                 className="rounded-full p-2 bg-transparent hover:bg-zinc-500/50 text-gray-200 hover:text-white hover:cursor-pointer transition-colors z-50 relative"
@@ -396,14 +395,14 @@ const OpenPlayVideo = ({
                     <button
                       onClick={() => onVideoChange && onVideoChange(Math.max(0, currentIndex - 1))}
                       disabled={currentIndex === 0}
-                      className="text-white hover:text-blue-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="text-white hover:cursor-pointer hover:text-blue-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <SkipBack size={24} />
                     </button>
                     <button
                       onClick={() => onVideoChange && onVideoChange(Math.min(playlist.length - 1, currentIndex + 1))}
                       disabled={currentIndex === playlist.length - 1}
-                      className="text-white hover:text-blue-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="text-white hover:cursor-pointer hover:text-blue-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <SkipForward size={24} />
                     </button>
@@ -438,31 +437,6 @@ const OpenPlayVideo = ({
           </div>
         </div>
       </div>
-
-      {/* Playlist Sidebar (if enabled) */}
-      {showPlaylist && playlist.length > 1 && (
-        <div className={`absolute right-0 top-0 h-full w-80 bg-black/90 backdrop-blur-sm border-l border-gray-700 transform transition-transform duration-300 ${showControls ? 'translate-x-0' : 'translate-x-full'}`}>
-          <div className="p-4">
-            <h4 className="text-white font-medium mb-4">Playlist ({playlist.length})</h4>
-            <div className="space-y-2 max-h-96 overflow-y-auto">
-              {playlist.map((item, index) => (
-                <div
-                  key={item.id || index}
-                  onClick={() => onVideoChange && onVideoChange(index)}
-                  className={`p-3 rounded-lg cursor-pointer transition-colors ${
-                    index === currentIndex 
-                      ? 'bg-blue-600 text-white' 
-                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-                  }`}
-                >
-                  <div className="font-medium truncate">{item.title || item.name || `Video ${index + 1}`}</div>
-                  <div className="text-xs opacity-75">{formatTime(item.duration || 0)}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

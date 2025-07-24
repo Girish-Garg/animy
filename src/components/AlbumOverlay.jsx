@@ -57,7 +57,6 @@ const AlbumOverlay = ({ isOpen, onClose, initialAlbumId }) => {
         setError('Failed to fetch albums');
       }
     } catch (err) {
-      console.error('Error fetching albums:', err);
       setError('Failed to fetch albums. Please try again.');
     } finally {
       setLoading(false);
@@ -220,7 +219,6 @@ const AlbumOverlay = ({ isOpen, onClose, initialAlbumId }) => {
         });
 
         if (response.data.success) {
-          // Transform API data to match component structure
           const transformedAlbums = response.data.albums.map(album => ({
             id: album._id,
             albumName: album.albumName,
@@ -234,20 +232,13 @@ const AlbumOverlay = ({ isOpen, onClose, initialAlbumId }) => {
             createdAt: album.createdAt,
             updatedAt: album.updatedAt
           }));
-
-          // Update with real data from server
           setAlbums(transformedAlbums);
-
-          console.log('Album renamed successfully');
         } else {
-          // Revert optimistic update on failure
           setAlbums(originalAlbums);
           toast.error('Failed to rename album. Please try again.');
         }
       } catch (error) {
-        // Revert optimistic update on error
         setAlbums(originalAlbums);
-        console.error('Error renaming album:', error);
         toast.error('Failed to rename album. Please check your connection and try again.');
       } finally {
         setRenamingAlbumId(null);
@@ -279,7 +270,6 @@ const AlbumOverlay = ({ isOpen, onClose, initialAlbumId }) => {
       const response = await apiUtils.delete(`/album/${albumId}`);
 
       if (response.data.success) {
-        // Transform API data to match component structure
         const transformedAlbums = response.data.albums.map(album => ({
           id: album._id,
           albumName: album.albumName,
@@ -293,20 +283,13 @@ const AlbumOverlay = ({ isOpen, onClose, initialAlbumId }) => {
           createdAt: album.createdAt,
           updatedAt: album.updatedAt
         }));
-
-        // Update with real data from server
         setAlbums(transformedAlbums);
-
-        console.log('Album deleted successfully');
       } else {
-        // Revert optimistic update on failure
         setAlbums(originalAlbums);
         toast.error('Failed to delete album. Please try again.');
       }
     } catch (error) {
-      // Revert optimistic update on error
       setAlbums(originalAlbums);
-      console.error('Error deleting album:', error);
       toast.error('Failed to delete album. Please check your connection and try again.');
     } finally {
       setDeletingAlbumId(null);

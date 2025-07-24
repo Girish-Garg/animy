@@ -34,7 +34,6 @@ import { useUser } from '@clerk/clerk-react';
 
 function CustomTrigger() {
   const { toggleSidebar } = useSidebar();
-  
   return (
     <button 
       onClick={toggleSidebar} 
@@ -54,10 +53,6 @@ export default function Layout() {
   const [albumOverlayOpen, setAlbumOverlayOpen] = useState(false);
   const [selectedAlbum, setSelectedAlbum] = useState(null);
   
-  if (!isSignedIn && isLoaded) {
-    navigate('/signin');
-  }
-  // Extract the current path without leading slash
   useEffect(() => {
     const path = location.pathname.replace(/^\//, '') || 'dashboard';
     setActivePage(path);
@@ -69,60 +64,29 @@ export default function Layout() {
     { key: 'billing', label: 'Billing', icon: CreditCardIcon },
     { key: 'profile', label: 'Profile', icon: UserIcon }
   ];
-  
-  const accountItems = [
-    
-  ];
+
   const renderMenuItem = (item) => {
     const { key, label, icon: Icon } = item;
     const isActive = activePage === key;
-    
     return (
       <SidebarMenuItem className="my-1" key={key}>
         <SidebarMenuButton
           isActive={isActive}
           tooltip={label}
-          className={`
-            w-64 h-14 flex items-center rounded-[15px] transition-all duration-100 hover:cursor-pointer
-            ${isActive 
-              ? "!bg-[#1A1F37] shadow-md" 
-              : "hover:bg-[#1A1F37]/40 hover:shadow-md hover:translate-x-1"
-            }
-          `}
+          className={`w-64 h-14 flex items-center rounded-[15px] transition-all duration-100 hover:cursor-pointer ${isActive ? "!bg-[#1A1F37] shadow-md" : "hover:bg-[#1A1F37]/40 hover:shadow-md hover:translate-x-1"}`}
           onClick={() => {
             if (key === 'album') {
-              // For albums, open the overlay instead of navigating
               setAlbumOverlayOpen(true);
             } else {
-              // For other items, navigate as usual
               navigate(`/${key}`);
             }
             setActivePage(key);
           }}
         >
-          <div className={`flex h-8 w-8 items-center justify-center rounded-[12px] transition-all duration-100
-            ${isActive 
-              ? 'bg-gradient-to-br from-[#0075FF] to-blue-500 shadow-md shadow-blue-500/20'
-              : 'bg-[#1A1F37]'
-            }
-          `}>
-            <Icon className={`              
-            h-4 w-4 transition-all duration-100
-              ${isActive 
-                ? 'text-white' 
-                : 'text-[#0075FF]'
-              }
-            `}/>
+          <div className={`flex h-8 w-8 items-center justify-center rounded-[12px] transition-all duration-100 ${isActive ? 'bg-gradient-to-br from-[#0075FF] to-blue-500 shadow-md shadow-blue-500/20' : 'bg-[#1A1F37]'}`}>
+            <Icon className={`h-4 w-4 transition-all duration-100 ${isActive ? 'text-white' : 'text-[#0075FF]'}`}/>
           </div>
-          <span className={`
-          ml-3 font-medium transition-all duration-100
-            ${isActive 
-              ? 'text-white' 
-              : 'text-gray-300'
-            }
-          `}>
-            {label}
-          </span>
+          <span className={`ml-3 font-medium transition-all duration-100 ${isActive ? 'text-white' : 'text-gray-300'}`}>{label}</span>
         </SidebarMenuButton>
       </SidebarMenuItem>
     );
@@ -130,7 +94,7 @@ export default function Layout() {
     return (
     <div className="flex h-screen w-full relative">
       <img src="/WholeBg.png" alt="" className="absolute inset-0 w-full h-full object-cover z-0" />
-      <div class="absolute inset-0 bg-black/60 z-10" />
+      <div className="absolute inset-0 bg-black/60 z-10" />
         <SidebarProvider defaultOpen={true}>
             <Sidebar variant="sidebar" className="w-72 flex-shrink-0 backdrop-blur-[3.125vw] shadow-xl !border-0"
             style={{background: 'linear-gradient(112deg, rgba(6, 11, 38, 0.94) 59.3%, rgba(26, 31, 55, 0.00) 100%)'}}>          

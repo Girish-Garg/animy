@@ -73,7 +73,6 @@ class AuthManager {
       return newToken;
       
     } catch (error) {
-      console.error('Token refresh failed:', error);
       this.processQueue(error, null);
       this.clearToken();
       throw error;

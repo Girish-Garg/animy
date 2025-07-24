@@ -41,13 +41,12 @@ import {
   CircleStop,
   FolderPlus,
 } from "lucide-react";
-
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+} from "@/components/ui/dropdown-menu";
 
 function CustomTrigger() {
   const { toggleSidebar } = useSidebar();
@@ -86,9 +85,11 @@ export default function Layout() {
   const [throttleTimeRemaining, setThrottleTimeRemaining] = useState(0);
   const throttleIntervalRef = useRef(null);
 
-  if(!isSignedIn && isLoaded) {
-    navigate('/signin');
-  }
+  useEffect(() => {
+    if(!isSignedIn && isLoaded) {
+      navigate('/signin');
+    }
+  }, [isSignedIn, isLoaded]);
 
   // Throttling constants
   const THROTTLE_DURATION = 10 * 60 * 1000; // 10 minutes in milliseconds
@@ -100,10 +101,9 @@ export default function Layout() {
     if (lastPromptTime) {
       const timeSinceLastPrompt = Date.now() - parseInt(lastPromptTime);
       const timeRemaining = THROTTLE_DURATION - timeSinceLastPrompt;
-      
       if (timeRemaining > 0) {
         setIsThrottled(true);
-        setThrottleTimeRemaining(Math.ceil(timeRemaining / 1000)); // Convert to seconds
+        setThrottleTimeRemaining(Math.ceil(timeRemaining / 1000));
         startThrottleTimer(timeRemaining);
         return true;
       }
@@ -118,7 +118,6 @@ export default function Layout() {
     if (throttleIntervalRef.current) {
       clearInterval(throttleIntervalRef.current);
     }
-
     throttleIntervalRef.current = setInterval(() => {
       setThrottleTimeRemaining(prev => {
         const newTime = prev - 1;
@@ -128,12 +127,9 @@ export default function Layout() {
           clearInterval(throttleIntervalRef.current);
           throttleIntervalRef.current = null;
           localStorage.removeItem(THROTTLE_STORAGE_KEY);
-          
-          // Dispatch custom event to notify other components throttling ended
           window.dispatchEvent(new CustomEvent('throttleStatusChanged', { 
             detail: { throttled: false, timestamp: Date.now() } 
           }));
-          
           return 0;
         }
         return newTime;
@@ -146,10 +142,8 @@ export default function Layout() {
     const currentTime = Date.now();
     localStorage.setItem(THROTTLE_STORAGE_KEY, currentTime.toString());
     setIsThrottled(true);
-    setThrottleTimeRemaining(THROTTLE_DURATION / 1000); // Convert to seconds
+    setThrottleTimeRemaining(THROTTLE_DURATION / 1000);
     startThrottleTimer(THROTTLE_DURATION);
-    
-    // Dispatch custom event to notify other components
     window.dispatchEvent(new CustomEvent('throttleStatusChanged', { 
       detail: { throttled: true, timestamp: currentTime } 
     }));
@@ -317,9 +311,7 @@ export default function Layout() {
       setIsLoading(true);
       const response = await apiUtils.get('/chat');
       const data = response.data;
-      
       if (data.success) {
-        // Transform API data to match component format
         const transformedChats = data.chats.map(chat => ({
           id: chat._id,
           title: chat.title,
@@ -329,9 +321,6 @@ export default function Layout() {
       }
     } catch (error) {
       // Don't log 401 errors as they're handled by the interceptor
-      if (error.response?.status !== 401) {
-        console.error('Error fetching chats:', error);
-      }
     } finally {
       setIsLoading(false);
     }
@@ -340,39 +329,26 @@ export default function Layout() {
   // Function to fetch specific chat data
   const fetchChatData = async (chatId, showLoading = true) => {
     try {
-      // Check if auth manager is initialized before making the request
       if (!isLoaded || !isSignedIn || !isAuthInitialized) {
         return;
       }
-
       if (showLoading) {
         setIsChatLoading(true);
       }
-      
       const response = await apiUtils.get(`/chat/${chatId}`);
       const data = response.data;
-      
       if (data.success) {
         setCurrentChatData(data.chat);
-        
-        // Check if there are any prompts that are still processing and start polling
         if (data.chat && data.chat.prompts) {
           const processingPrompt = data.chat.prompts.find(prompt => 
             !prompt.video && prompt.status === "processing"
           );
-          
           if (processingPrompt) {
-            // Start polling for the processing prompt
-            console.log('Found processing prompt, starting polling:', processingPrompt._id);
             startPolling(chatId, processingPrompt._id);
           }
         }
       }
     } catch (error) {
-      // Only log non-auth errors
-      if (!error.message?.includes('Auth manager not initialized')) {
-        console.error('Error fetching chat data:', error);
-      }
     } finally {
       if (showLoading) {
         setIsChatLoading(false);
@@ -385,36 +361,25 @@ export default function Layout() {
     try {
       const response = await apiUtils.get(`/chat/${chatId}/status/${promptId}`);
       const data = response.data;
-
       if (data.success) {
         const status = data.status;
-        
         if (status === 'completed') {
           setGeneratingMessage('');
           setGeneratingPromptId(null);
-          
-          // Stop polling
           if (pollingIntervalRef.current) {
             clearInterval(pollingIntervalRef.current);
             pollingIntervalRef.current = null;
           }
-          
-          // Refresh the chat data to show the completed video
           fetchChatData(chatId, false);
         } else if (status === 'failed') {
           setGeneratingMessage('');
           setGeneratingPromptId(null);
-          
-          // Stop polling
           if (pollingIntervalRef.current) {
             clearInterval(pollingIntervalRef.current);
             pollingIntervalRef.current = null;
           }
-          
-          // Update the chat data to show failure state
           setCurrentChatData(prevData => {
             if (!prevData) return prevData;
-            
             return {
               ...prevData,
               prompts: prevData.prompts.map(p => 
@@ -424,18 +389,15 @@ export default function Layout() {
               )
             };
           });
-          
-          // Refresh chat data to get the latest state from server
           setTimeout(() => fetchChatData(chatId, false), 1000);
         } else if (status === 'processing') {
-          // Use the message from the API if available, or default message
           const message = data.message || 'Generating video...';
           setGeneratingMessage(message);
           setGeneratingPromptId(promptId);
         }
       }
     } catch (error) {
-      console.error('Error polling prompt status:', error);
+      // Suppress polling errors in production
     }
   };
 
@@ -443,28 +405,20 @@ export default function Layout() {
   const startPolling = (chatId, promptId) => {
     setGeneratingPromptId(promptId);
     setGeneratingMessage('Starting video generation...');
-    
-    // Clear any existing polling
     if (pollingIntervalRef.current) {
       clearInterval(pollingIntervalRef.current);
       pollingIntervalRef.current = null;
     }
-    
-    // Start new polling interval
     const intervalId = setInterval(() => {
       pollPromptStatus(chatId, promptId);
-    }, 25000); // Poll every 25 seconds
-    
+    }, 25000);
     pollingIntervalRef.current = intervalId;
-    
-    // Also poll immediately
     pollPromptStatus(chatId, promptId);
   };
 
   // Stop video generation process
   const stopVideoGeneration = async () => {
     if (!generatingPromptId || !activeChat) {
-      // If no active generation, just clear the polling
       if (pollingIntervalRef.current) {
         clearInterval(pollingIntervalRef.current);
         pollingIntervalRef.current = null;
@@ -473,37 +427,17 @@ export default function Layout() {
       setGeneratingMessage('');
       return;
     }
-
     try {
-      // Call the backend kill API to cancel the video generation
       const fullUrl = `/chat/${activeChat}/kill/${generatingPromptId}`;
-      console.log(`Making kill request to: ${fullUrl}`);
-      console.log(`Full API URL would be: ${import.meta.env.VITE_BACKEND_URL}${fullUrl}`);
-      const response = await apiUtils.post(fullUrl);
-      
-      if (response.data.success) {
-        console.log('Video generation cancelled successfully');
-        
-        // Clear polling interval
-        if (pollingIntervalRef.current) {
-          clearInterval(pollingIntervalRef.current);
-          pollingIntervalRef.current = null;
-        }
-        
-        // Reset generation state - this will hide the video placeholder
-        setGeneratingPromptId(null);
-        setGeneratingMessage('');
-        
-        // Optionally refresh chat data to reflect the cancelled status
-        // setTimeout(() => {
-        //   fetchChatData(activeChat, false);
-        // }, 200);
-        
-      } else {
-        console.error('Failed to cancel video generation:', response.data.error);
+      await apiUtils.post(fullUrl);
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
       }
+      setGeneratingPromptId(null);
+      setGeneratingMessage('');
     } catch (error) {
-      console.error('Error calling kill API:', error);
+      // Suppress kill errors in production
     }
   };
 
@@ -822,7 +756,7 @@ const renderMenuItem = (item) => {
       link.click();
       document.body.removeChild(link);
     } catch (error) {
-      console.error('Error downloading video:', error);
+      // Suppress download errors in production
     }
   };
 

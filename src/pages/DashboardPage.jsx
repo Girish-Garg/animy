@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useUser } from '@clerk/clerk-react';
 import { useNavigate } from 'react-router-dom';
-import { CircularProgressbar, buildStyles } from 'react-circular-progressbar';
-import 'react-circular-progressbar/dist/styles.css';
 import { Send, ArrowRight, ChevronRight, Plus } from 'lucide-react';
 import AlbumOverlay from '../components/AlbumOverlay';
 import { apiUtils } from '@/lib/apiClient';
@@ -14,9 +12,11 @@ export default function DashboardPage() {
     chats: [],
     albums: []
   });
-  if (!isSignedIn && isLoaded) {
-    navigate('/signin');
-  }
+  useEffect(() => {
+    if (!isSignedIn && isLoaded) {
+      navigate('/signin');
+    }
+  }, [isSignedIn, isLoaded, navigate]);
   const [loading, setLoading] = useState(true);
   const [inputValue, setInputValue] = useState('');
   const [albumOverlayOpen, setAlbumOverlayOpen] = useState(false);
@@ -29,7 +29,7 @@ export default function DashboardPage() {
   const throttleIntervalRef = useRef(null);
 
   // Throttling constants
-  const THROTTLE_DURATION = 10 * 60 * 1000; // 10 minutes in milliseconds
+  const THROTTLE_DURATION = 10 * 60 * 1000;
   const THROTTLE_STORAGE_KEY = 'animy_last_prompt_time';
 
   // Check if user is currently throttled
@@ -103,16 +103,12 @@ export default function DashboardPage() {
   const fetchDashboardData = async () => {
     try {
       const response = await apiUtils.get('/dashboard');
-        
       if (response.data.success) {
         setDashboardData({
           chats: response.data.chats || [],
           albums: response.data.albums || []
         });
       }
-    } catch (error) {
-      console.error('Error fetching dashboard data:', error);
-        // Keep empty state on error
     } finally {
       setLoading(false);
     }
@@ -218,7 +214,6 @@ export default function DashboardPage() {
       
       setIsCreatingNewChat(false);
     } catch (error) {
-      console.error('Error creating new chat:', error);
       setIsCreatingNewChat(false);
     }
   };
