@@ -6,7 +6,6 @@ import chatRoutes from "./routes/chat.routes.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
 import albumRoutes from "./routes/album.routes.js";
 import { handleValidationErrors } from "./middleware/validation.middleware.js";
-import path from 'path';
 import connectDB from "./db/connection.js";
 import { clerkMiddleware } from "@clerk/express";
 
@@ -16,7 +15,7 @@ connectDB();
 const app = express();
 
 app.use(cors({
-  origin: process.env.FRONTEND_URL || "http://localhost:5173",
+  origin: [process.env.FRONTEND_URL , "http://localhost:5173"],
   credentials: true
 }));
 app.use(clerkMiddleware());
