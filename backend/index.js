@@ -11,7 +11,7 @@ import { clerkMiddleware } from "@clerk/express";
 import * as Sentry from "@sentry/node";
 
 Sentry.init({
-  dsn: "https://7602a9b3f72e16262ed8a1433b43489d@o4509724094431232.ingest.us.sentry.io/4509724099346432",
+  dsn: "https://267546bd766c252e5cd811bdbd52bec9@o4509724094431232.ingest.us.sentry.io/4509724393865216",
   sendDefaultPii: true,
   tracesSampleRate: 0.2,
 });
