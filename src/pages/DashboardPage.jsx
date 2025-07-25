@@ -499,9 +499,6 @@ export default function DashboardPage() {
                     onClick={() => handleChatClick(chat._id)}
                     className="flex items-center gap-3 p-3 bg-blue-900/10 hover:bg-blue-900/20 rounded-lg cursor-pointer transition-colors border border-blue-900/20 hover:border-blue-800/40"
                   >
-                    <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-blue-500 rounded-full flex items-center justify-center flex-shrink-0 text-white text-xs font-bold">
-                      C
-                    </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-white text-sm font-medium truncate">
                         {chat.title}

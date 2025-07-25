@@ -63,7 +63,7 @@ export const getVideoStatus = async (req, res) => {
                 return res.status(200).json({
                     success: true,
                     status: 'cancelled',
-                    message: 'Video generation was cancelled',
+                    message: 'Video generation was cancelled by user',
                     type: 'cancelled'
                 });
             }
@@ -78,9 +78,18 @@ export const getVideoStatus = async (req, res) => {
                     type: 'success'
                 });
             }
+
+            if (existingPrompt.status === 'failed') {
+                return res.status(500).json({
+                    success: false,
+                    status: 'failed',
+                    error: existingPrompt.errorMessage || 'Failed to generate video',
+                    type: 'error'
+                });
+            }
         }
         
-        // Only make external API call if not cancelled or completed
+        // Only make external API call if not cancelled or completed or failed
         const response = await axios.get(`${process.env.Video_API_BASE_URL}/video/status/${user._id}/${chatId}`);
 
         if (!response.data.success) {

@@ -47,6 +47,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Skeleton } from '@/components/ui/skeleton';
 
 function CustomTrigger() {
   const { toggleSidebar } = useSidebar();
@@ -361,23 +362,18 @@ export default function Layout() {
     try {
       const response = await apiUtils.get(`/chat/${chatId}/status/${promptId}`);
       const data = response.data;
+
       if (data.success) {
         const status = data.status;
-        if (status === 'completed') {
+        if (status === 'completed' || status === 'cancelled') {
           setGeneratingMessage('');
           setGeneratingPromptId(null);
-          if (pollingIntervalRef.current) {
-            clearInterval(pollingIntervalRef.current);
-            pollingIntervalRef.current = null;
-          }
+          clearPolling();
           fetchChatData(chatId, false);
         } else if (status === 'failed') {
           setGeneratingMessage('');
           setGeneratingPromptId(null);
-          if (pollingIntervalRef.current) {
-            clearInterval(pollingIntervalRef.current);
-            pollingIntervalRef.current = null;
-          }
+          clearPolling();
           setCurrentChatData(prevData => {
             if (!prevData) return prevData;
             return {
@@ -397,21 +393,27 @@ export default function Layout() {
         }
       }
     } catch (error) {
-      // Suppress polling errors in production
+      console.warn('Error polling prompt status:', error);
+    }
+  };
+
+  const clearPolling = () => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
     }
   };
 
   // Start polling for prompt status
   const startPolling = (chatId, promptId) => {
+    clearPolling();
+
     setGeneratingPromptId(promptId);
     setGeneratingMessage('Starting video generation...');
-    if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current);
-      pollingIntervalRef.current = null;
-    }
+
     const intervalId = setInterval(() => {
       pollPromptStatus(chatId, promptId);
-    }, 25000);
+    }, 20000);
     pollingIntervalRef.current = intervalId;
     pollPromptStatus(chatId, promptId);
   };
@@ -419,35 +421,26 @@ export default function Layout() {
   // Stop video generation process
   const stopVideoGeneration = async () => {
     if (!generatingPromptId || !activeChat) {
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-        pollingIntervalRef.current = null;
-      }
+      clearPolling();
       setGeneratingPromptId(null);
       setGeneratingMessage('');
       return;
     }
     try {
-      const fullUrl = `/chat/${activeChat}/kill/${generatingPromptId}`;
-      await apiUtils.post(fullUrl);
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-        pollingIntervalRef.current = null;
-      }
-      setGeneratingPromptId(null);
-      setGeneratingMessage('');
+      await apiUtils.post(`/chat/${activeChat}/kill/${generatingPromptId}`);
     } catch (error) {
       // Suppress kill errors in production
+    } finally {
+      clearPolling();
+      setGeneratingPromptId(null);
+      setGeneratingMessage('');
     }
   };
 
   // Cleanup polling on component unmount
   useEffect(() => {
     return () => {
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
-        pollingIntervalRef.current = null;
-      }
+      clearPolling();
       if (throttleIntervalRef.current) {
         clearInterval(throttleIntervalRef.current);
         throttleIntervalRef.current = null;
@@ -880,6 +873,26 @@ const renderMenuItem = (item) => {
     }
   }, [currentChatData?.prompts?.length]);
 
+  // On initial page load, check for processing prompt and start polling
+  useEffect(() => {
+    // Only run on mount
+    if (location.pathname.includes('/chat/chat') &&
+      currentChatData && currentChatData.prompts &&
+      !pollingIntervalRef.current
+    ) {
+      const processingPrompt = currentChatData.prompts.find(
+        prompt => !prompt.video && prompt.status === 'processing'
+      );
+      if (processingPrompt && activeChat) {
+        setGeneratingPromptId(processingPrompt._id);
+        setGeneratingMessage('Starting video generation...');
+        startPolling(activeChat, processingPrompt._id);
+      }
+    }
+    // Only run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, activeChat, currentChatData]);
+
   return (
     <div className="flex h-screen w-full relative">
       <img src="/WholeBg.png" alt="" className="absolute inset-0 w-full h-full object-cover z-0" />
@@ -898,8 +911,12 @@ const renderMenuItem = (item) => {
                     <SidebarGroupLabel className="px-2 text-gray-400 text-sm font-medium">Recent Chats</SidebarGroupLabel>
                     <SidebarMenu className="space-y-1 mt-2 max-h-[calc(100vh-320px)] overflow-y-auto pr-1">
                         {isLoading ? (
-                          <div className="text-center py-6">
-                            <p className="text-gray-400 text-sm">Loading chats...</p>
+                          <div className="space-y-3">
+                            <Skeleton className="h-6 w-full rounded-md bg-[#1A1F37]" />
+                            <Skeleton className="h-6 w-full rounded-md bg-[#1A1F37]" />
+                            <Skeleton className="h-6 w-full rounded-md bg-[#1A1F37]" />
+                            <Skeleton className="h-6 w-full rounded-md bg-[#1A1F37]" />
+                            <Skeleton className="h-6 w-full rounded-md bg-[#1A1F37]" />
                           </div>
                         ) : chatItems.length > 0 ? (
                           chatItems.map(renderChatItem)
@@ -975,8 +992,13 @@ const renderMenuItem = (item) => {
                       ref={chatContainerRef}
                     >
                       {isChatLoading ? (
-                        <div className="flex flex-col items-center justify-center h-full text-center">
-                          <p className="text-gray-600"></p>
+                        <div className="space-y-4 px-8 py-10">
+                          <div className="flex justify-end">
+                            <Skeleton className="w-[50%] h-10 rounded-full bg-[#1A1F37]" />
+                          </div>
+                          <div className="flex justify-center">
+                            <Skeleton className="w-[80%] aspect-video rounded-xl bg-[#1A1F37]" />
+                          </div>
                         </div>
                       ) : currentChatData && currentChatData.prompts?.length > 0 ? (
                         <div className="space-y-4 pb-4">
@@ -1036,13 +1058,10 @@ const renderMenuItem = (item) => {
                                 </div>
                               ) : prompt.status === 'failed' ? (
                                 <div className="flex justify-center">
-                                  <div className="w-[80%] rounded-2xl rounded-tr-md p-3">
-                                    <div className="relative aspect-video rounded-xl overflow-hidden bg-gradient-to-r from-red-900/20 via-red-600/30 to-red-900/20 border border-red-500/30">
+                                  <div className="w-[80%] h-[10%] rounded-2xl rounded-tr-md p-3">
+                                    <div className="relative rounded-xl overflow-hidden bg-gradient-to-r from-red-900/20 via-red-600/30 to-red-900/20 border border-red-500/30">
                                       <div className="flex items-center justify-center h-full">
                                         <div className="text-center">
-                                          <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center mx-auto mb-4">
-                                            <X className="w-6 h-6 text-red-400" />
-                                          </div>
                                           <p className="text-red-400 text-lg font-medium">Video Generation Failed</p>
                                           <p className="text-red-300 text-sm mt-2">Something went wrong while creating your video</p>
                                           <p className="text-red-200 text-xs mt-1">Please try again later</p>

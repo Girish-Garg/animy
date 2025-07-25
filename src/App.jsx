@@ -1,4 +1,4 @@
-import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import Signup from './pages/auth/SignUp';
 import SSOCallbackPage from './pages/auth/SSOCallback';
 import SignIn from './pages/auth/SignIn';
@@ -23,7 +23,7 @@ function AppContent() {
           <Route path="/signin" element={<SignIn />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/" element={<Layout />}>
-            <Route index element={<DashboardPage />} />
+            <Route index element={<Navigate to='/signin' replace />} />
             <Route path="dashboard" element={<DashboardPage />} />
             <Route path="billing" element={<BillingPage />} />
             <Route path="profile" element={<ProfilePage />} />
