@@ -1,6 +1,9 @@
 import axios from "axios";
 import Prompt from "../schema/prompt.schema.js";
 import Chat from "../schema/chat.schema.js";
+import { sendSuccessMail } from "../utils/sendSuccessMain.js";
+// In-memory map to track polling jobs (promptId -> true)
+const pollingJobs = {};
 
 export const generateVideo = async (req, res) => {
     try {
@@ -52,11 +55,11 @@ export const getVideoStatus = async (req, res) => {
         const user = req.user;
         ({ chatId, promptId } = req.validatedData.params);
         console.log(`Fetching video status for chatId: ${chatId}, promptId: ${promptId}`);
-        
+
         // Check local prompt status FIRST before making external API call
         if (promptId) {
             existingPrompt = await Prompt.findById(promptId);
-            
+
             if (!existingPrompt) {
                 return res.status(404).json({ success: false, error: 'Prompt not found' });
             }
@@ -70,7 +73,7 @@ export const getVideoStatus = async (req, res) => {
                     type: 'cancelled'
                 });
             }
-            
+
             // If already completed, return immediately
             if (existingPrompt.status === 'completed' && existingPrompt.video) {
                 return res.status(200).json({
@@ -91,59 +94,86 @@ export const getVideoStatus = async (req, res) => {
                 });
             }
         }
-        
-        // Only make external API call if not cancelled or completed or failed
-        const response = await axios.get(`${process.env.Video_API_BASE_URL}/video/status/${user._id}/${chatId}`);
-        console.log("Response from video status API:", response);
-        if (!response.data.success) {
-            return res.status(500).json({ success: false, error: 'Failed to fetch video status' });
-        }
-        console.log('Video status response:', response.data.status);
-        
-        if (promptId) {
-            const existingPrompt = await Prompt.findById(promptId);
-            
-            if (response.data.status.status == 'failed') {
-                const { message } = response.data.status;
-                await Prompt.findByIdAndUpdate(existingPrompt._id, {
-                    status: "failed",
-                    errorMessage: message || 'Failed to generate video',
-                });
-                return res.status(500).json({
-                    success: false,
-                    type: 'error',
-                    error: message || 'Failed to generate video', 
-                    status: 'failed' 
-                });
+
+        // Always return instantly with current status
+        if (existingPrompt && existingPrompt.status === 'processing') {
+            // Start background polling if not already running
+            if (!pollingJobs[promptId]) {
+                pollingJobs[promptId] = true;
+                (async function pollInBackground() {
+                    let pollAttempts = 0;
+                    const maxPolls = 60;
+                    let done = false;
+                    while (!done && pollAttempts < maxPolls) {
+                        try {
+                            const pollResponse = await axios.get(`${process.env.Video_API_BASE_URL}/video/status/${user._id}/${chatId}`);
+                            if (!pollResponse.data.success) {
+                                // Optionally log error
+                                break;
+                            }
+                            const pollStatus = pollResponse.data.status.status;
+                            if (pollStatus === 'failed') {
+                                const { message } = pollResponse.data.status;
+                                await Prompt.findByIdAndUpdate(promptId, {
+                                    status: "failed",
+                                    errorMessage: message || 'Failed to generate video',
+                                });
+                                done = true;
+                                break;
+                            }
+                            if (pollStatus === 'complete') {
+                                const video = {
+                                    videoPath: pollResponse.data.status.videoUrl,
+                                    thumbnailPath: pollResponse.data.status.thumbnailUrl,
+                                };
+                                await Prompt.findByIdAndUpdate(promptId, {
+                                    status: "completed",
+                                    video: video,
+                                });
+                                sendSuccessMail(user.email, existingPrompt.prompt, `https://app.animy.tech/chat/chat?id=${chatId}`);
+                                done = true;
+                                break;
+                            }
+                            if (pollStatus === 'cancelled') {
+                                await Prompt.findByIdAndUpdate(promptId, {
+                                    status: "cancelled",
+                                    errorMessage: 'Video generation was cancelled by user',
+                                });
+                                done = true;
+                                break;
+                            }
+                            // Save latest message from API if available
+                            if (pollResponse.data.status && pollResponse.data.status.message) {
+                                await Prompt.findByIdAndUpdate(promptId, {
+                                    $set: { lastApiMessage: pollResponse.data.status.message }
+                                });
+                            }
+                        } catch (err) {
+                            // Optionally log error
+                            break;
+                        }
+                        pollAttempts++;
+                        await new Promise(resolve => setTimeout(resolve, 20000)); // 20 seconds
+                    }
+                    // Clean up job tracker
+                    delete pollingJobs[promptId];
+                })();
             }
-            
-            if (response.data.status.status == 'complete') {
-                const video = {
-                    videoPath: response.data.status.videoUrl,
-                    thumbnailPath: response.data.status.thumbnailUrl,
-                }
-                await Prompt.findByIdAndUpdate(existingPrompt._id, {
-                    status: "completed",
-                    video: video,
-                });
-                return res.status(200).json({
-                    success: true,
-                    type: 'success', 
-                    message: 'Video generated successfully',
-                    video,
-                    status: 'completed'
-                });
-            }
+            // Respond instantly with current status and last known message from DB
+            return res.status(200).json({
+                success: true,
+                status: 'processing',
+                video: null,
+                message: existingPrompt.lastApiMessage || existingPrompt.errorMessage || 'Video is processing'
+            });
         }
 
+        // If not processing, return current status (should not reach here, but fallback)
         return res.status(200).json({
             success: true,
-            status: response.data.status.status,
-            video: response.data.status.videoUrl ? {
-                videoPath: response.data.status.videoUrl,
-                thumbnailPath: response.data.status.thumbnailUrl,
-            } : null,
-            message: response.data.status.message
+            status: existingPrompt ? existingPrompt.status : 'unknown',
+            video: existingPrompt && existingPrompt.video ? existingPrompt.video : null,
+            message: 'Generating...'
         });
 
     } catch (error) {

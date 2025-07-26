@@ -26,6 +26,10 @@ const promptSchema = new Schema({
         type: String,
         default: null,
     },
+    lastApiMessage: {
+        type: String,
+        default: null,
+    }
 }, {
   timestamps: true,
 });
