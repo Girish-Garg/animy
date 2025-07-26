@@ -23,11 +23,22 @@ export default function DashboardPage() {
   const [inputValue, setInputValue] = useState('');
   const [albumOverlayOpen, setAlbumOverlayOpen] = useState(false);
   const [selectedAlbumId, setSelectedAlbumId] = useState(null);
-  
-  // Recoil throttle and generation state
   const { isThrottled, throttleTimeRemaining } = useRecoilValue(throttleStatusSelector);
   const [isGenerating] = useRecoilState(isGeneratingAtom);
   const [isCreatingNewChat, setIsCreatingNewChat] = useState(false);
+  const [localThrottleTimeRemaining, setLocalThrottleTimeRemaining] = useState(throttleTimeRemaining);
+
+  useEffect(() => {
+    if (!isThrottled) {
+      setLocalThrottleTimeRemaining(0);
+      return;
+    }
+    setLocalThrottleTimeRemaining(throttleTimeRemaining);
+    const interval = setInterval(() => {
+      setLocalThrottleTimeRemaining(prev => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isThrottled, throttleTimeRemaining]);
 
   // Format time remaining for display
   const formatTimeRemaining = (seconds) => {
@@ -262,7 +273,7 @@ export default function DashboardPage() {
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 className="w-full bg-[#131631] text-white border border-blue-900/30 rounded-full py-3 px-4 pr-12 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
-                placeholder={isThrottled ? `Wait ${formatTimeRemaining(throttleTimeRemaining)}` : "Describe your animation scene..."}
+                placeholder={isThrottled ? `Wait ${formatTimeRemaining(localThrottleTimeRemaining)}` : "Describe your animation scene..."}
                 aria-label="Scene description"
                 disabled={isThrottled || isGenerating.isGenerating || isCreatingNewChat}
               />
