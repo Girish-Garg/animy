@@ -295,7 +295,7 @@ const OpenPlayVideo = ({
       }}
     >
       {/* Video Element */}
-      <div className="relative w-full max-w-6xl h-full">
+      <div className="relative w-full h-full">
         <video
           ref={videoRef}
           src={video.path || video.videoPath}
