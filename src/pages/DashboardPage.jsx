@@ -1,9 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useUser } from '@clerk/clerk-react';
 import { useNavigate } from 'react-router-dom';
 import { Send, ArrowRight, ChevronRight, Plus } from 'lucide-react';
 import AlbumOverlay from '../components/AlbumOverlay';
 import { apiUtils } from '@/lib/apiClient';
+import { useRecoilValue, useRecoilState } from 'recoil';
+import { isThrottleAtom, throttleStatusSelector, isGeneratingAtom } from '../recoil/throttle';
 
 export default function DashboardPage() {
   const { user, isSignedIn, isLoaded } = useUser();
@@ -22,76 +24,10 @@ export default function DashboardPage() {
   const [albumOverlayOpen, setAlbumOverlayOpen] = useState(false);
   const [selectedAlbumId, setSelectedAlbumId] = useState(null);
   
-  // Throttling states
-  const [isThrottled, setIsThrottled] = useState(false);
-  const [throttleTimeRemaining, setThrottleTimeRemaining] = useState(0);
+  // Recoil throttle and generation state
+  const { isThrottled, throttleTimeRemaining } = useRecoilValue(throttleStatusSelector);
+  const [isGenerating] = useRecoilState(isGeneratingAtom);
   const [isCreatingNewChat, setIsCreatingNewChat] = useState(false);
-  const throttleIntervalRef = useRef(null);
-
-  // Throttling constants
-  const THROTTLE_DURATION = 10 * 60 * 1000;
-  const THROTTLE_STORAGE_KEY = 'animy_last_prompt_time';
-
-  // Check if user is currently throttled
-  const checkThrottleStatus = () => {
-    const lastPromptTime = localStorage.getItem(THROTTLE_STORAGE_KEY);
-    if (lastPromptTime) {
-      const timeSinceLastPrompt = Date.now() - parseInt(lastPromptTime);
-      const timeRemaining = THROTTLE_DURATION - timeSinceLastPrompt;
-      
-      if (timeRemaining > 0) {
-        setIsThrottled(true);
-        setThrottleTimeRemaining(Math.ceil(timeRemaining / 1000)); // Convert to seconds
-        startThrottleTimer(timeRemaining);
-        return true;
-      }
-    }
-    setIsThrottled(false);
-    setThrottleTimeRemaining(0);
-    return false;
-  };
-
-  // Start the throttle countdown timer
-  const startThrottleTimer = (initialTime) => {
-    if (throttleIntervalRef.current) {
-      clearInterval(throttleIntervalRef.current);
-    }
-
-    throttleIntervalRef.current = setInterval(() => {
-      setThrottleTimeRemaining(prev => {
-        const newTime = prev - 1;
-        if (newTime <= 0) {
-          setIsThrottled(false);
-          setThrottleTimeRemaining(0);
-          clearInterval(throttleIntervalRef.current);
-          throttleIntervalRef.current = null;
-          localStorage.removeItem(THROTTLE_STORAGE_KEY);
-          
-          // Dispatch custom event to notify other components throttling ended
-          window.dispatchEvent(new CustomEvent('throttleStatusChanged', { 
-            detail: { throttled: false, timestamp: Date.now() } 
-          }));
-          
-          return 0;
-        }
-        return newTime;
-      });
-    }, 1000);
-  };
-
-  // Apply throttle after sending a prompt
-  const applyThrottle = () => {
-    const currentTime = Date.now();
-    localStorage.setItem(THROTTLE_STORAGE_KEY, currentTime.toString());
-    setIsThrottled(true);
-    setThrottleTimeRemaining(THROTTLE_DURATION / 1000); // Convert to seconds
-    startThrottleTimer(THROTTLE_DURATION);
-    
-    // Dispatch custom event to notify other components
-    window.dispatchEvent(new CustomEvent('throttleStatusChanged', { 
-      detail: { throttled: true, timestamp: currentTime } 
-    }));
-  };
 
   // Format time remaining for display
   const formatTimeRemaining = (seconds) => {
@@ -122,84 +58,21 @@ export default function DashboardPage() {
     }
   }, [user]);
 
-  // Check throttle status on component mount and when window gains focus
-  useEffect(() => {
-    checkThrottleStatus();
-    
-    // Add event listeners for window focus and visibility change
-    const handleFocus = () => {
-      checkThrottleStatus();
-    };
-    
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        checkThrottleStatus();
-      }
-    };
-    
-    // Listen for storage changes to sync throttling across tabs/components
-    const handleStorageChange = (e) => {
-      if (e.key === THROTTLE_STORAGE_KEY) {
-        checkThrottleStatus();
-      }
-    };
-    
-    // Listen for custom throttle events from other components
-    const handleThrottleChange = () => {
-      checkThrottleStatus();
-    };
-    
-    window.addEventListener('focus', handleFocus);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('storage', handleStorageChange);
-    window.addEventListener('throttleStatusChanged', handleThrottleChange);
-    
-    return () => {
-      window.removeEventListener('focus', handleFocus);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('throttleStatusChanged', handleThrottleChange);
-    };
-  }, []);
 
-  // Cleanup on component unmount
-  useEffect(() => {
-    return () => {
-      if (throttleIntervalRef.current) {
-        clearInterval(throttleIntervalRef.current);
-        throttleIntervalRef.current = null;
-      }
-    };
-  }, []);
   
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!inputValue.trim()) return;
-    
-    // Check if user is throttled
-    if (isThrottled) {
-      return;
-    }
-    
+    if (isThrottled || isGenerating.isGenerating) return;
     try {
-      // Set creating new chat state
       setIsCreatingNewChat(true);
-      
-      // Apply throttle before creating new chat
-      applyThrottle();
-      
       const response = await apiUtils.post('/chat', {
         prompt: inputValue.trim(),
-        title: inputValue.trim().slice(0, 50) // Use first 50 chars as title
+        title: inputValue.trim().slice(0, 50)
       });
-      
       const data = response.data;
-      
       if (data.type === "chat_replaced" || data.type === "success") {
-        // Clear the input first for immediate feedback
         setInputValue('');
-        
-        // Navigate to the specific chat with prompt ID if available
         const promptId = data.promptId;
         if (promptId) {
           setTimeout(() => {
@@ -211,7 +84,6 @@ export default function DashboardPage() {
           }, 100);
         }
       }
-      
       setIsCreatingNewChat(false);
     } catch (error) {
       setIsCreatingNewChat(false);
@@ -392,12 +264,12 @@ export default function DashboardPage() {
                 className="w-full bg-[#131631] text-white border border-blue-900/30 rounded-full py-3 px-4 pr-12 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
                 placeholder={isThrottled ? `Wait ${formatTimeRemaining(throttleTimeRemaining)}` : "Describe your animation scene..."}
                 aria-label="Scene description"
-                disabled={isThrottled}
+                disabled={isThrottled || isGenerating.isGenerating || isCreatingNewChat}
               />
               <button 
                 type="submit" 
                 className="absolute right-5 top-1/2 transform -translate-y-1/2 text-blue-500 hover:text-blue-600 hover:cursor-pointer transition-colors disabled:text-gray-600 disabled:cursor-not-allowed"
-                disabled={!inputValue.trim() || isThrottled}
+                disabled={!inputValue.trim() || isThrottled || isGenerating.isGenerating || isCreatingNewChat}
                 aria-label="Submit"
               >
                 <Send size={18} />

@@ -49,8 +49,13 @@ export const addToAlbum = async (req, res) => {
         if (!album) {
             return res.status(404).json({ success: false, error: "Album not found or unauthorized" });
         }
-        const videoName = video.videoPath.split('/').pop();
-        const thumbnailName = video.thumbnailPath.split('/').pop();
+        const videoPathSegment = video.videoPath.split('/');
+        const thumbnailPathSegment = video.thumbnailPath.split('/');
+        if( videoPathSegment[videoPathSegment.length - 2] === 'album' && thumbnailPathSegment[thumbnailPathSegment.length - 2] === 'album' ) {
+            return res.status(400).json({ success: false, error: "Video already exists in album" });
+        }
+        const videoName = videoPathSegment.pop();
+        const thumbnailName = thumbnailPathSegment.pop();
         const videoRes = await axios.post(`${process.env.Video_API_BASE_URL}/chat/move/${user._id}/${chatId}/${videoName}`);
         const thumbnailRes = await axios.post(`${process.env.Video_API_BASE_URL}/chat/move/${user._id}/${chatId}/${thumbnailName}`);
         if (!videoRes.data || !thumbnailRes.data) {

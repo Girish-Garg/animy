@@ -35,7 +35,8 @@ export const generateVideo = async (req, res) => {
             success: true,
             message: 'Video generation started successfully',
             chatId: chatId,
-            promptId: newPrompt._id
+            promptId: newPrompt._id,
+            createdAt: newPrompt.createdAt,
         });
 
     } catch (error) {
@@ -45,14 +46,16 @@ export const generateVideo = async (req, res) => {
 }
 
 export const getVideoStatus = async (req, res) => {
+    let chatId, promptId;
+    let existingPrompt;
     try {
         const user = req.user;
-        const { chatId, promptId } = req.validatedData.params;
+        ({ chatId, promptId } = req.validatedData.params);
         console.log(`Fetching video status for chatId: ${chatId}, promptId: ${promptId}`);
         
         // Check local prompt status FIRST before making external API call
         if (promptId) {
-            const existingPrompt = await Prompt.findById(promptId);
+            existingPrompt = await Prompt.findById(promptId);
             
             if (!existingPrompt) {
                 return res.status(404).json({ success: false, error: 'Prompt not found' });
@@ -91,7 +94,7 @@ export const getVideoStatus = async (req, res) => {
         
         // Only make external API call if not cancelled or completed or failed
         const response = await axios.get(`${process.env.Video_API_BASE_URL}/video/status/${user._id}/${chatId}`);
-
+        console.log("Response from video status API:", response);
         if (!response.data.success) {
             return res.status(500).json({ success: false, error: 'Failed to fetch video status' });
         }
@@ -99,7 +102,7 @@ export const getVideoStatus = async (req, res) => {
         
         if (promptId) {
             const existingPrompt = await Prompt.findById(promptId);
-
+            
             if (response.data.status.status == 'failed') {
                 const { message } = response.data.status;
                 await Prompt.findByIdAndUpdate(existingPrompt._id, {
@@ -144,7 +147,19 @@ export const getVideoStatus = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error in getVideoStatus controller:', error);
+        const existingPrompt = await Prompt.findById(promptId);
+        if (error.status == 404 || error.status == 500) {
+            await Prompt.findByIdAndUpdate(existingPrompt._id, {
+                    status: "failed",
+                    errorMessage: 'Failed to generate video via external API',
+            });
+            return res.status(500).json({
+                    success: false,
+                    type: 'error',
+                    error: 'Failed to generate video via external API',
+                    status: 'failed' 
+            });
+        }
         return res.status(500).json({ type: 'error', error: 'Internal Server Error' });
     }
 }

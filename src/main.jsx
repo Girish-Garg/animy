@@ -6,6 +6,7 @@ import { ClerkProvider } from '@clerk/clerk-react'
 const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 import { Analytics } from "@vercel/analytics/react"
 import { SpeedInsights } from "@vercel/speed-insights/react"
+import { RecoilRoot } from 'recoil'
 
 if (!PUBLISHABLE_KEY) {
   throw new Error('Missing Publishable Key')
@@ -14,7 +15,9 @@ if (!PUBLISHABLE_KEY) {
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <ClerkProvider publishableKey={PUBLISHABLE_KEY} afterSignOutUrl={'/'}>
-      <App />
+      <RecoilRoot>
+        <App />
+      </RecoilRoot>
     </ClerkProvider>
     <Analytics />
     <SpeedInsights />

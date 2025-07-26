@@ -79,9 +79,10 @@ export const createChat = async (req, res) => {
       type: isDeleted ? "chat_replaced" : "success",
       message: "Chat created successfully",
       chat: newChat,
-      promptId: newPrompt._id
+      promptId: newPrompt._id,
+      createdAt: newPrompt.createdAt,
     });
-    
+
   } catch (err) {
     console.error('Error in createChat controller:', err);
     return res.status(500).json({ success: false, error: 'Internal Server Error' });
@@ -98,7 +99,7 @@ export const getChat = async (req, res) => {
 
     const chat = await Chat.findOne({ _id: chatId, userId: user._id}).populate({
       path: 'prompts',
-      select: 'video prompt createdAt updatedAt',
+      select: 'video status prompt createdAt updatedAt',
       options: { sort: { createdAt: 1 }}
     }).lean();
     if (!chat) {

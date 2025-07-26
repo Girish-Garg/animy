@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useRecoilState, useRecoilValue } from 'recoil';
+import { isThrottleAtom, throttleStatusSelector, isGeneratingAtom } from '../recoil/throttle';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { apiUtils } from '@/lib/apiClient';
 import { useAuth } from '@clerk/clerk-react';
@@ -82,9 +84,22 @@ export default function Layout() {
   const [editingChatId, setEditingChatId] = useState(null);
   const [editingChatName, setEditingChatName] = useState('');
   const [blurEnabled, setBlurEnabled] = useState(true);
-  const [isThrottled, setIsThrottled] = useState(false);
-  const [throttleTimeRemaining, setThrottleTimeRemaining] = useState(0);
-  const throttleIntervalRef = useRef(null);
+  const [throttleState, setThrottleState] = useRecoilState(isThrottleAtom);
+  const { isThrottled, throttleTimeRemaining } = useRecoilValue(throttleStatusSelector);
+
+  const [isGenerating, setIsGenerating] = useRecoilState(isGeneratingAtom);
+  const [localThrottleTimeRemaining, setLocalThrottleTimeRemaining] = useState(throttleTimeRemaining);
+  useEffect(() => {
+    if (!isThrottled) {
+      setLocalThrottleTimeRemaining(0);
+      return;
+    }
+    setLocalThrottleTimeRemaining(throttleTimeRemaining);
+    const interval = setInterval(() => {
+      setLocalThrottleTimeRemaining(prev => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isThrottled, throttleTimeRemaining]);
 
   useEffect(() => {
     if(!isSignedIn && isLoaded) {
@@ -92,62 +107,13 @@ export default function Layout() {
     }
   }, [isSignedIn, isLoaded]);
 
-  // Throttling constants
-  const THROTTLE_DURATION = 10 * 60 * 1000; // 10 minutes in milliseconds
-  const THROTTLE_STORAGE_KEY = 'animy_last_prompt_time';
 
-  // Check if user is currently throttled
-  const checkThrottleStatus = () => {
-    const lastPromptTime = localStorage.getItem(THROTTLE_STORAGE_KEY);
-    if (lastPromptTime) {
-      const timeSinceLastPrompt = Date.now() - parseInt(lastPromptTime);
-      const timeRemaining = THROTTLE_DURATION - timeSinceLastPrompt;
-      if (timeRemaining > 0) {
-        setIsThrottled(true);
-        setThrottleTimeRemaining(Math.ceil(timeRemaining / 1000));
-        startThrottleTimer(timeRemaining);
-        return true;
-      }
-    }
-    setIsThrottled(false);
-    setThrottleTimeRemaining(0);
-    return false;
-  };
-
-  // Start the throttle countdown timer
-  const startThrottleTimer = (initialTime) => {
-    if (throttleIntervalRef.current) {
-      clearInterval(throttleIntervalRef.current);
-    }
-    throttleIntervalRef.current = setInterval(() => {
-      setThrottleTimeRemaining(prev => {
-        const newTime = prev - 1;
-        if (newTime <= 0) {
-          setIsThrottled(false);
-          setThrottleTimeRemaining(0);
-          clearInterval(throttleIntervalRef.current);
-          throttleIntervalRef.current = null;
-          localStorage.removeItem(THROTTLE_STORAGE_KEY);
-          window.dispatchEvent(new CustomEvent('throttleStatusChanged', { 
-            detail: { throttled: false, timestamp: Date.now() } 
-          }));
-          return 0;
-        }
-        return newTime;
-      });
-    }, 1000);
-  };
-
-  // Apply throttle after sending a prompt
-  const applyThrottle = () => {
-    const currentTime = Date.now();
-    localStorage.setItem(THROTTLE_STORAGE_KEY, currentTime.toString());
-    setIsThrottled(true);
-    setThrottleTimeRemaining(THROTTLE_DURATION / 1000);
-    startThrottleTimer(THROTTLE_DURATION);
-    window.dispatchEvent(new CustomEvent('throttleStatusChanged', { 
-      detail: { throttled: true, timestamp: currentTime } 
-    }));
+  // Set throttle after sending a prompt (always 10 minutes = 600 seconds)
+  const applyThrottle = (createdAt) => {
+  setThrottleState({
+      lastCreatedAt: createdAt,
+      throttleDuration: 600,
+    });
   };
 
   // Format time remaining for display
@@ -160,18 +126,11 @@ export default function Layout() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!inputValue.trim()) return;
-    
-    // Check if user is throttled
-    if (isThrottled) {
-      return;
-    }
-    
-    try {      
+    if (isThrottled) return;
+
+    try {
       // If we're in an active chat, send message to existing chat
       if (activeChat) {
-        // Apply throttle before sending the request
-        applyThrottle();
-        
         // Show immediate feedback by adding user message optimistically
         const userPrompt = {
           _id: `temp-${Date.now()}`,
@@ -179,122 +138,100 @@ export default function Layout() {
           video: null,
           createdAt: new Date().toISOString()
         };
-        
-        // Add user message to current chat data immediately
         setCurrentChatData(prevData => ({
           ...prevData,
           prompts: [...(prevData?.prompts || []), userPrompt]
         }));
-        
-        // Clear input immediately for better UX
         const promptToSend = inputValue.trim();
         setInputValue('');
-        
-        // Set loading state for the new prompt
         setGeneratingPromptId(userPrompt._id);
         setGeneratingMessage('Sending message...');
-        
+        setIsGenerating({
+          isGenerating: true,
+        });
         try {
           const response = await apiUtils.post(`/chat/${activeChat}/generate`, {
             prompt: promptToSend
           });
-          
           const data = response.data;
-          
           if (data.success) {
-            // Replace the temporary prompt with the real one from server
+            if (data.createdAt) {
+              applyThrottle(new Date(data.createdAt).getTime());
+            }
             setCurrentChatData(prevData => ({
               ...prevData,
-              prompts: prevData.prompts.map(p => 
-                p._id === userPrompt._id 
+              prompts: prevData.prompts.map(p =>
+                p._id === userPrompt._id
                   ? { ...p, _id: data.promptId }
                   : p
               )
             }));
-            
-            // Start polling for video generation status
             if (data.promptId) {
               startPolling(activeChat, data.promptId);
             }
-            
-            // Refresh the chat data to get the complete updated chat
             setTimeout(() => fetchChatData(activeChat, false), 1000);
           } else {
-            console.error('Failed to send message:', data.message);
             setGeneratingMessage('Failed to send message');
             setGeneratingPromptId(null);
-            
-            // Remove the optimistic prompt on failure
+            setIsGenerating({
+              isGenerating: false,
+            });
             setCurrentChatData(prevData => ({
               ...prevData,
               prompts: prevData.prompts.filter(p => p._id !== userPrompt._id)
             }));
           }
         } catch (error) {
-          console.error('Error sending message to existing chat:', error);
           setGeneratingMessage('Failed to send message');
           setGeneratingPromptId(null);
-          
-          // Remove the optimistic prompt on error
+          setIsGenerating({
+            isGenerating: false,
+          });
           setCurrentChatData(prevData => ({
             ...prevData,
             prompts: prevData.prompts.filter(p => p._id !== userPrompt._id)
           }));
         }
-        
         return;
       }
-      
+
       // If no active chat, create new chat with the prompt
       setIsCreatingNewChat(true);
-      
-      // Apply throttle before creating new chat
-      applyThrottle();
-      
       const response = await apiUtils.post('/chat', {
         prompt: inputValue.trim(),
-        title: inputValue.trim().slice(0, 50) // Use first 50 chars as title
+        title: inputValue.trim().slice(0, 50)
       });
-      
       const data = response.data;
-      
+      // ...existing code...
       if (data.type === "chat_replaced" || data.type === "success") {
-        // Clear the input first for immediate feedback
+        // Set throttle using backend createdAt (always 10 min)
+        if (data.createdAt) {
+          applyThrottle(new Date(data.createdAt).getTime());
+        }
         setInputValue('');
-        
-        // Set the new chat as active with smooth transition
         setActiveChat(data.chat._id);
         setActivePage('chat');
         localStorage.setItem('animy_last_chat', data.chat._id);
-        
-        // Use a slight delay for smoother transition
         setTimeout(() => {
           navigate(`/chat/chat?id=${data.chat._id}`);
         }, 100);
-        
-        // Fetch the chat data to show the new prompt and response
         setTimeout(() => {
           fetchChatData(data.chat._id);
         }, 200);
-        
-        // Refresh the chats list to show the new chat in sidebar
         setTimeout(() => {
           fetchChats();
         }, 300);
-        
-        // Start polling for video generation status
         if (data.promptId) {
           setTimeout(() => {
             startPolling(data.chat._id, data.promptId);
           }, 400);
         }
       } else {
-        console.error('Failed to create new chat:', data.message);
+        setIsCreatingNewChat(false);
       }
-      
       setIsCreatingNewChat(false);
     } catch (error) {
-      console.error('Error creating new chat:', error);
+      setIsCreatingNewChat(false);
     }
   };
   const [chatItems, setChatItems] = useState([]);
@@ -368,11 +305,17 @@ export default function Layout() {
         if (status === 'completed' || status === 'cancelled') {
           setGeneratingMessage('');
           setGeneratingPromptId(null);
+          setIsGenerating({
+            isGenerating: false,
+          });
           clearPolling();
           fetchChatData(chatId, false);
         } else if (status === 'failed') {
           setGeneratingMessage('');
           setGeneratingPromptId(null);
+          setIsGenerating({
+            isGenerating: false,
+          });
           clearPolling();
           setCurrentChatData(prevData => {
             if (!prevData) return prevData;
@@ -390,6 +333,9 @@ export default function Layout() {
           const message = data.message || 'Generating video...';
           setGeneratingMessage(message);
           setGeneratingPromptId(promptId);
+          setIsGenerating({
+            isGenerating: true,
+          });
         }
       }
     } catch (error) {
@@ -424,6 +370,9 @@ export default function Layout() {
       clearPolling();
       setGeneratingPromptId(null);
       setGeneratingMessage('');
+      setIsGenerating({
+        isGenerating: false,
+      });
       return;
     }
     try {
@@ -434,6 +383,9 @@ export default function Layout() {
       clearPolling();
       setGeneratingPromptId(null);
       setGeneratingMessage('');
+      setIsGenerating({
+        isGenerating: false,
+      });
     }
   };
 
@@ -441,50 +393,6 @@ export default function Layout() {
   useEffect(() => {
     return () => {
       clearPolling();
-      if (throttleIntervalRef.current) {
-        clearInterval(throttleIntervalRef.current);
-        throttleIntervalRef.current = null;
-      }
-    };
-  }, []);
-
-  // Check throttle status on component mount and when window gains focus
-  useEffect(() => {
-    checkThrottleStatus();
-    
-    // Add event listeners for window focus and visibility change
-    const handleFocus = () => {
-      checkThrottleStatus();
-    };
-    
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        checkThrottleStatus();
-      }
-    };
-    
-    // Listen for storage changes to sync throttling across tabs/components
-    const handleStorageChange = (e) => {
-      if (e.key === THROTTLE_STORAGE_KEY) {
-        checkThrottleStatus();
-      }
-    };
-    
-    // Listen for custom throttle events from other components
-    const handleThrottleChange = () => {
-      checkThrottleStatus();
-    };
-    
-    window.addEventListener('focus', handleFocus);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('storage', handleStorageChange);
-    window.addEventListener('throttleStatusChanged', handleThrottleChange);
-    
-    return () => {
-      window.removeEventListener('focus', handleFocus);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('throttleStatusChanged', handleThrottleChange);
     };
   }, []);
   useEffect(() => {
@@ -539,7 +447,6 @@ export default function Layout() {
         
         // If we have a specific promptId (likely from Dashboard), start polling for it
         if (promptId) {
-          console.log('Starting polling for prompt from URL:', promptId);
           setTimeout(() => {
             startPolling(chatId, promptId);
             // Clean up the URL by removing the promptId parameter
@@ -883,6 +790,7 @@ const renderMenuItem = (item) => {
       const processingPrompt = currentChatData.prompts.find(
         prompt => !prompt.video && prompt.status === 'processing'
       );
+      // ...existing code...
       if (processingPrompt && activeChat) {
         setGeneratingPromptId(processingPrompt._id);
         setGeneratingMessage('Starting video generation...');
@@ -912,11 +820,11 @@ const renderMenuItem = (item) => {
                     <SidebarMenu className="space-y-1 mt-2 max-h-[calc(100vh-320px)] overflow-y-auto pr-1">
                         {isLoading ? (
                           <div className="space-y-3">
-                            <Skeleton className="h-6 w-full rounded-md bg-[#1A1F37]" />
-                            <Skeleton className="h-6 w-full rounded-md bg-[#1A1F37]" />
-                            <Skeleton className="h-6 w-full rounded-md bg-[#1A1F37]" />
-                            <Skeleton className="h-6 w-full rounded-md bg-[#1A1F37]" />
-                            <Skeleton className="h-6 w-full rounded-md bg-[#1A1F37]" />
+                            <Skeleton className="h-6 w-full rounded-md bg-[#222846]" />
+                            <Skeleton className="h-6 w-full rounded-md bg-[#222846]" />
+                            <Skeleton className="h-6 w-full rounded-md bg-[#222846]" />
+                            <Skeleton className="h-6 w-full rounded-md bg-[#222846]" />
+                            <Skeleton className="h-6 w-full rounded-md bg-[#222846]" />
                           </div>
                         ) : chatItems.length > 0 ? (
                           chatItems.map(renderChatItem)
@@ -992,12 +900,12 @@ const renderMenuItem = (item) => {
                       ref={chatContainerRef}
                     >
                       {isChatLoading ? (
-                        <div className="space-y-4 px-8 py-10">
+                        <div className="space-y-4 px-2 py-2">
                           <div className="flex justify-end">
-                            <Skeleton className="w-[50%] h-10 rounded-full bg-[#1A1F37]" />
+                            <Skeleton className="w-[50%] h-12 rounded-full bg-[#222846]" />
                           </div>
                           <div className="flex justify-center">
-                            <Skeleton className="w-[80%] aspect-video rounded-xl bg-[#1A1F37]" />
+                            <Skeleton className="w-[80%] aspect-video rounded-xl bg-[#222846]" />
                           </div>
                         </div>
                       ) : currentChatData && currentChatData.prompts?.length > 0 ? (
@@ -1058,13 +966,12 @@ const renderMenuItem = (item) => {
                                 </div>
                               ) : prompt.status === 'failed' ? (
                                 <div className="flex justify-center">
-                                  <div className="w-[80%] h-[10%] rounded-2xl rounded-tr-md p-3">
+                                  <div className="w-[80%] h-fit rounded-2xl rounded-tr-md p-3">
                                     <div className="relative rounded-xl overflow-hidden bg-gradient-to-r from-red-900/20 via-red-600/30 to-red-900/20 border border-red-500/30">
                                       <div className="flex items-center justify-center h-full">
-                                        <div className="text-center">
+                                        <div className="text-center py-2">
                                           <p className="text-red-400 text-lg font-medium">Video Generation Failed</p>
                                           <p className="text-red-300 text-sm mt-2">Something went wrong while creating your video</p>
-                                          <p className="text-red-200 text-xs mt-1">Please try again later</p>
                                         </div>
                                       </div>
                                     </div>
@@ -1103,11 +1010,11 @@ const renderMenuItem = (item) => {
                           value={inputValue}
                           onChange={(e) => setInputValue(e.target.value)}
                           className="w-full bg-[#131631] text-white border border-blue-900/30 rounded-full py-3 px-4 pr-12 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
-                          placeholder={isThrottled ? `Wait ${formatTimeRemaining(throttleTimeRemaining)}` : "Describe your animation scene..."}
+                          placeholder={isThrottled ? `Wait ${formatTimeRemaining(localThrottleTimeRemaining)}` : "Describe your animation scene..."}
                           aria-label="Scene description"
-                          disabled={generatingPromptId !== null || isThrottled}
+                          disabled={isGenerating.isGenerating || isThrottled}
                         />
-                        {generatingPromptId ? (
+                        {isGenerating.isGenerating ? (
                           <button 
                             type="button"
                             onClick={stopVideoGeneration}
@@ -1120,7 +1027,7 @@ const renderMenuItem = (item) => {
                           <button 
                             type="submit" 
                             className="absolute right-5 top-1/2 transform -translate-y-1/2 text-blue-500 hover:text-blue-600 hover:cursor-pointer transition-colors disabled:text-gray-600 disabled:cursor-not-allowed"
-                            disabled={!inputValue.trim() || isThrottled}
+                            disabled={!inputValue.trim() || isThrottled || isGenerating.isGenerating}
                             aria-label="Submit"
                           >
                             <SendIcon size={18} />
@@ -1146,7 +1053,7 @@ const renderMenuItem = (item) => {
                             <div className="mb-6 p-4 bg-orange-900/20 border border-orange-600/30 rounded-lg text-center max-w-md mx-auto">
                               <p className="text-orange-400 text-base font-medium">Limit active</p>
                               <p className="text-orange-300 text-sm mt-2">
-                                Next prompt available in: {formatTimeRemaining(throttleTimeRemaining)}
+                                Next prompt available in: {formatTimeRemaining(localThrottleTimeRemaining)}
                               </p>
                             </div>
                           )}
@@ -1156,11 +1063,11 @@ const renderMenuItem = (item) => {
                               value={inputValue}
                               onChange={(e) => setInputValue(e.target.value)}
                               className="w-full bg-[#131631] text-white border border-blue-900/30 rounded-full py-3 px-4 pr-12 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
-                              placeholder = {isThrottled ? `Wait ${formatTimeRemaining(throttleTimeRemaining)}` : "Describe your animation scene the way you want."}
+                              placeholder = {isThrottled ? `Wait ${formatTimeRemaining(localThrottleTimeRemaining)}` : "Describe your animation scene the way you want."}
                               aria-label="Scene description"
-                              disabled={generatingPromptId !== null || isCreatingNewChat || isThrottled}
+                              disabled={isGenerating.isGenerating || isCreatingNewChat || isThrottled}
                             />
-                            {generatingPromptId ? (
+                            {isGenerating.isGenerating ? (
                               <button 
                                 type="button"
                                 onClick={stopVideoGeneration}
@@ -1173,7 +1080,7 @@ const renderMenuItem = (item) => {
                               <button 
                                 type="submit" 
                                 className="absolute right-5 top-1/2 transform -translate-y-1/2 text-blue-500 hover:text-blue-600 hover:cursor-pointer transition-colors disabled:text-gray-600 disabled:cursor-not-allowed"
-                                disabled={!inputValue.trim() || isCreatingNewChat || isThrottled}
+                                disabled={!inputValue.trim() || isCreatingNewChat || isThrottled || isGenerating.isGenerating}
                                 aria-label="Submit"
                               >
                                 <SendIcon size={18} />
