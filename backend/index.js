@@ -16,6 +16,7 @@ import * as Sentry from "@sentry/node";
 import { validateEnv } from "./config/env.js";
 import logger from "./utils/logger.js";
 
+app.set('trust proxy', 1);
 // Fail fast with a readable message if the environment is misconfigured.
 try {
   validateEnv(process.env);
