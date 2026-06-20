@@ -20,12 +20,12 @@ The repository is a monorepo with two independent apps:
 ## Features
 
 - **Prompt → video** generation with live status updates (processing / completed / failed / cancelled).
-- **Chats** — each generation lives in a chat thread; a rolling limit keeps the most recent chats.
+- **Chats**: each generation lives in a chat thread; a rolling limit keeps the most recent chats.
 - **Stop generation** mid-flight; status is reconciled from the backend so it never gets "stuck" on reload.
-- **Albums** — save finished videos into named albums, rename them, and remove them.
+- **Albums**: save finished videos into named albums, rename them, and remove them.
 - **Auth** via [Clerk](https://clerk.com) (email/password, OAuth/SSO, password reset).
 - **Email notifications** when a video finishes (Zoho SMTP via Nodemailer).
-- **Hardened API** — Helmet, CORS allow-list, rate limiting, zod request validation, per-user authorization checks, and structured logging.
+- **Hardened API**: Helmet, CORS allow-list, rate limiting, zod request validation, per-user authorization checks, and structured logging.
 
 ---
 
@@ -57,7 +57,7 @@ The repository is a monorepo with two independent apps:
 6. A finished video can be added to an album, which moves the media on the Video API and
    records the new paths on the `Album`.
 
-> **Note:** AnimY does not generate video pixels itself — it orchestrates an external
+> **Note:** AnimY does not generate video pixels itself. It orchestrates an external
 > video-generation service configured via `Video_API_BASE_URL`.
 
 ---
@@ -140,11 +140,11 @@ The backend must be started **from the `backend/` directory** (so `dotenv` picks
 `backend/.env`):
 
 ```bash
-# Terminal 1 — backend API (http://localhost:5000)
+# Terminal 1: backend API (http://localhost:5000)
 cd backend
 npm run dev
 
-# Terminal 2 — frontend (http://localhost:5173)
+# Terminal 2: frontend (http://localhost:5173)
 npm run dev
 ```
 
@@ -260,9 +260,9 @@ CI (`.github/workflows/ci.yml`) runs lint, tests, and a production build on ever
 
 The API has been hardened against the common issues for this kind of app:
 
-- **Authorization on every resource** — chats, prompts, and albums are always scoped to
+- **Authorization on every resource**: chats, prompts, and albums are always scoped to
   the authenticated user; cross-user access (IDOR) is blocked.
-- **No secrets in code** — SMTP credentials and the Sentry DSN come from the environment.
+- **No secrets in code**: SMTP credentials and the Sentry DSN come from the environment.
 - **Helmet**, a strict **CORS allow-list**, a **1 MB JSON body limit**, and **rate limiting**.
 - **zod validation** on all request params/bodies.
 - **Atomic multi-step writes** via MongoDB transactions where needed (e.g. creating an
@@ -270,7 +270,7 @@ The API has been hardened against the common issues for this kind of app:
 - **Structured logging** with pino; sensitive headers (authorization, cookies) are redacted.
 
 > ⚠️ If this repo was ever public with committed credentials, **rotate any leaked secrets**
-> (SMTP password, API keys) — git history retains old values even after they're removed.
+> (SMTP password, API keys) - git history retains old values even after they're removed.
 
 ---
 
@@ -286,4 +286,4 @@ The API has been hardened against the common issues for this kind of app:
 
 ## License
 
-Proprietary — all rights reserved (update this section if you intend to open-source).
+Proprietary. All rights reserved (update this section if you intend to open-source).
