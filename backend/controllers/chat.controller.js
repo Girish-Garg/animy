@@ -1,7 +1,9 @@
-import axios from "axios";
+import videoApi from "../utils/videoApi.js";
 import Chat from "../schema/chat.schema.js";
 import Prompt from "../schema/prompt.schema.js";
 import User from "../schema/user.schema.js";
+import logger from "../utils/logger.js";
+import mongoose from "mongoose";
 
 const MaxChatLimit = 5;
 
@@ -36,7 +38,7 @@ export const createChat = async (req, res) => {
         { $pull: { chatIds: oldestChatId } 
       });
 
-      const chatDeletionResponse = await axios.delete(`${process.env.Video_API_BASE_URL}/chat/${user._id}/${oldestChatId}`);
+      const chatDeletionResponse = await videoApi.delete(`${process.env.Video_API_BASE_URL}/chat/${user._id}/${oldestChatId}`);
       if (!chatDeletionResponse.data.success) {
         return res.status(500).json({ success: false, error: 'Failed to delete oldest chat' });
       }
@@ -53,7 +55,7 @@ export const createChat = async (req, res) => {
       { $push: { chatIds: newChat._id } 
     });
 
-    const GenerateResponse = await axios.post(`${process.env.Video_API_BASE_URL}/video/generate`, {
+    const GenerateResponse = await videoApi.post(`${process.env.Video_API_BASE_URL}/video/generate`, {
       prompt,
       userId: user._id,
       chatId: newChat._id,
@@ -84,7 +86,7 @@ export const createChat = async (req, res) => {
     });
 
   } catch (err) {
-    console.error('Error in createChat controller:', err);
+    logger.error('Error in createChat controller:', err);
     return res.status(500).json({ success: false, error: 'Internal Server Error' });
   }
 }
@@ -112,7 +114,7 @@ export const getChat = async (req, res) => {
       chat,
     });
   } catch (err) {
-    console.error('Error in getChats controller:', err);
+    logger.error('Error in getChats controller:', err);
     return res.status(500).json({ success: false, error: 'Internal Server Error' });
   }
 }
@@ -132,7 +134,7 @@ export const getAllChats = async (req, res) => {
       chats,
     });
   } catch (err) {
-    console.error('Error in getAllChats controller:', err);
+    logger.error('Error in getAllChats controller:', err);
     return res.status(500).json({ success: false, error: 'Internal Server Error' });
   }
 }
@@ -150,14 +152,22 @@ export const deleteChat = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Chat not found or unauthorized' });
     }
     
-    await Prompt.deleteMany({ _id: { $in: chat.prompts.map(p => p._id) } });
-    await Chat.findByIdAndDelete(chatId);
-    await User.findByIdAndUpdate(user._id, { $pull: { chatIds: chat._id } });
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
+        await Prompt.deleteMany({ _id: { $in: chat.prompts.map(p => p._id) } }, { session });
+        await Chat.findByIdAndDelete(chatId, { session });
+        await User.findByIdAndUpdate(user._id, { $pull: { chatIds: chat._id } }, { session });
+      });
+    } finally {
+      session.endSession();
+    }
 
-    const chatDeletionResponse = await axios.delete(`${process.env.Video_API_BASE_URL}/chat/${user._id}/${chatId}`);
-
-    if (!chatDeletionResponse.data.success) {
-      return res.status(500).json({ success: false, error: 'Failed to delete chat from external service' });
+    // Best-effort external cleanup; the chat is already removed for the user.
+    try {
+      await videoApi.delete(`${process.env.Video_API_BASE_URL}/chat/${user._id}/${chatId}`);
+    } catch (err) {
+      logger.error({ err }, 'Failed to delete chat media from external service');
     }
 
     return res.status(200).json({
@@ -165,7 +175,7 @@ export const deleteChat = async (req, res) => {
       message: "Chat deleted successfully",
     });
   } catch (err) {
-    console.error('Error in deleteChat controller:', err);
+    logger.error('Error in deleteChat controller:', err);
     return res.status(500).json({ success: false, error: 'Internal Server Error' });
   }
 }
@@ -195,7 +205,7 @@ export const renameChat = async (req, res) => {
     });
     
   } catch (err) {
-    console.error('Error in renameChat controller:', err);
+    logger.error('Error in renameChat controller:', err);
     return res.status(500).json({ success: false, error: 'Internal Server Error' });
   }
 }

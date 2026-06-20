@@ -1,4 +1,5 @@
 import User from "../schema/user.schema.js";
+import logger from "../utils/logger.js";
 
 const dashboard = async (req, res) => {
     try {
@@ -27,7 +28,7 @@ const dashboard = async (req, res) => {
             albums: user.albumIds || [],
         })
     } catch (err) {
-        console.error('Error in dashboard controller:', err);
+        logger.error('Error in dashboard controller:', err);
         return res.status(500).json({ success: false, error: 'Internal Server Error' });
     }
 }

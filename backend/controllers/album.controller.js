@@ -1,7 +1,10 @@
-import axios from "axios";
+import videoApi from "../utils/videoApi.js";
 import Album from "../schema/album.schema.js";
 import User from "../schema/user.schema.js";
 import Prompt from "../schema/prompt.schema.js";
+import Chat from "../schema/chat.schema.js";
+import logger from "../utils/logger.js";
+import mongoose from "mongoose";
 
 export const createAlbum = async (req, res) => {
     try {
@@ -16,21 +19,30 @@ export const createAlbum = async (req, res) => {
             return res.status(400).json({ success: false, error: "Album with this name already exists" });
         }
 
-        const album = new Album({
-            userId: user._id,
-            albumName: albumName.trim(),
-        });
-        await album.save();
-        await User.findByIdAndUpdate(user._id, 
-            { $push: { albumIds: album._id } 
-        });
+        const session = await mongoose.startSession();
+        try {
+            await session.withTransaction(async () => {
+                const album = new Album({
+                    userId: user._id,
+                    albumName: albumName.trim(),
+                });
+                await album.save({ session });
+                await User.findByIdAndUpdate(
+                    user._id,
+                    { $push: { albumIds: album._id } },
+                    { session }
+                );
+            });
+        } finally {
+            session.endSession();
+        }
 
         res.status(201).json({
             success: true,
             message: "Album created successfully",
         });
     } catch (err) {
-        console.error('Error in createAlbum controller:', err);
+        logger.error('Error in createAlbum controller:', err);
         return res.status(500).json({ success: false, error: 'Internal Server Error' });
     }
 }
@@ -49,20 +61,40 @@ export const addToAlbum = async (req, res) => {
         if (!album) {
             return res.status(404).json({ success: false, error: "Album not found or unauthorized" });
         }
-        const videoPathSegment = video.videoPath.split('/');
-        const thumbnailPathSegment = video.thumbnailPath.split('/');
-        if( videoPathSegment[videoPathSegment.length - 2] === 'album' && thumbnailPathSegment[thumbnailPathSegment.length - 2] === 'album' ) {
+        // Authorization: the chat must belong to the requesting user.
+        const chat = await Chat.findOne({ _id: chatId, userId: user._id });
+        if (!chat) {
+            return res.status(404).json({ success: false, error: "Chat not found or unauthorized" });
+        }
+
+        // Source of truth: find the prompt that actually holds this video in the
+        // user's chat. Filenames are derived from the stored record, never from
+        // the request body (prevents arbitrary paths reaching the media API).
+        const prompt = await Prompt.findOne({
+            chatId,
+            'video.videoPath': video.videoPath,
+            'video.thumbnailPath': video.thumbnailPath,
+        });
+        if (!prompt || !prompt.video) {
+            return res.status(404).json({ success: false, error: "Video not found in this chat" });
+        }
+
+        const videoPathSegment = prompt.video.videoPath.split('/');
+        const thumbnailPathSegment = prompt.video.thumbnailPath.split('/');
+        if (videoPathSegment[videoPathSegment.length - 2] === 'album' && thumbnailPathSegment[thumbnailPathSegment.length - 2] === 'album') {
             return res.status(400).json({ success: false, error: "Video already exists in album" });
         }
         const videoName = videoPathSegment.pop();
         const thumbnailName = thumbnailPathSegment.pop();
-        const videoRes = await axios.post(`${process.env.Video_API_BASE_URL}/chat/move/${user._id}/${chatId}/${videoName}`);
-        const thumbnailRes = await axios.post(`${process.env.Video_API_BASE_URL}/chat/move/${user._id}/${chatId}/${thumbnailName}`);
+        const [videoRes, thumbnailRes] = await Promise.all([
+            videoApi.post(`${process.env.Video_API_BASE_URL}/chat/move/${user._id}/${chatId}/${videoName}`),
+            videoApi.post(`${process.env.Video_API_BASE_URL}/chat/move/${user._id}/${chatId}/${thumbnailName}`),
+        ]);
         if (!videoRes.data || !thumbnailRes.data) {
             return res.status(500).json({ success: false, error: "Failed to move video or thumbnail" });
         }
-        await Prompt.findOneAndUpdate(
-            { chatId: chatId, 'video.videoPath': video.videoPath , 'video.thumbnailPath': video.thumbnailPath },
+        await Prompt.findByIdAndUpdate(
+            prompt._id,
             { $set: { 'video.videoPath': videoRes.data.newUrl, 'video.thumbnailPath': thumbnailRes.data.newUrl } },
             { new: true }
         );
@@ -80,7 +112,7 @@ export const addToAlbum = async (req, res) => {
         });
 
     } catch (err) {
-        console.error('Error in uploadToAlbum controller:', err);
+        logger.error('Error in uploadToAlbum controller:', err);
         return res.status(500).json({ success: false, error: 'Internal Server Error' });
     }
 }
@@ -107,7 +139,7 @@ export const getAlbum = async (req, res) => {
             }
         });
     } catch (err) {
-        console.error('Error in getAlbum controller:', err);
+        logger.error('Error in getAlbum controller:', err);
         return res.status(500).json({ success: false, error: 'Internal Server Error' });
     }
 }
@@ -128,10 +160,10 @@ export const deleteAlbum = async (req, res) => {
         for (const video of album.videos) {
             const videoName = video.videoPath.split('/').pop();
             const thumbnailName = video.thumbnailPath.split('/').pop();
-            const videoRes = await axios.delete(`${process.env.Video_API_BASE_URL}/chat/album/${user._id}/${videoName}`);
-            const thumbnailRes = await axios.delete(`${process.env.Video_API_BASE_URL}/chat/album/${user._id}/${thumbnailName}`);
+            const videoRes = await videoApi.delete(`${process.env.Video_API_BASE_URL}/chat/album/${user._id}/${videoName}`);
+            const thumbnailRes = await videoApi.delete(`${process.env.Video_API_BASE_URL}/chat/album/${user._id}/${thumbnailName}`);
             if (!videoRes.data || !thumbnailRes.data) {
-                console.error(`Failed to delete video or thumbnail: ${videoName} or ${thumbnailName}`);
+                logger.error(`Failed to delete video or thumbnail: ${videoName} or ${thumbnailName}`);
             }
         }
 
@@ -151,7 +183,7 @@ export const deleteAlbum = async (req, res) => {
             albums: remainingAlbums,
         });
     } catch (err) {
-        console.error('Error in deleteAlbum controller:', err);
+        logger.error('Error in deleteAlbum controller:', err);
         return res.status(500).json({ success: false, error: 'Internal Server Error' });
     }
 }
@@ -177,10 +209,10 @@ export const deleteFromAlbum = async (req, res) => {
         
         const videoName = videoToDelete.videoPath.split('/').pop();
         const thumbnailName = videoToDelete.thumbnailPath.split('/').pop();
-        const videoRes = await axios.delete(`${process.env.Video_API_BASE_URL}/chat/album/${user._id}/${videoName}`);
-        const thumbnailRes = await axios.delete(`${process.env.Video_API_BASE_URL}/chat/album/${user._id}/${thumbnailName}`);
+        const videoRes = await videoApi.delete(`${process.env.Video_API_BASE_URL}/chat/album/${user._id}/${videoName}`);
+        const thumbnailRes = await videoApi.delete(`${process.env.Video_API_BASE_URL}/chat/album/${user._id}/${thumbnailName}`);
         if (!videoRes.data || !thumbnailRes.data) {
-            console.error(`Failed to delete video or thumbnail: ${videoName} or ${thumbnailName}`);
+            logger.error(`Failed to delete video or thumbnail: ${videoName} or ${thumbnailName}`);
         }
 
         album.videos = album.videos.filter(video => video._id.toString() !== videoId);
@@ -197,7 +229,7 @@ export const deleteFromAlbum = async (req, res) => {
             }
         });
     } catch (err) {
-        console.error('Error in deleteFromAlbum controller:', err);
+        logger.error('Error in deleteFromAlbum controller:', err);
         return res.status(500).json({ success: false, error: 'Internal Server Error' });        
     }
 }
@@ -236,7 +268,7 @@ export const renameAlbum = async (req, res) => {
             albums,
         });
     } catch (err) {
-        console.error('Error in renameAlbum controller:', err);
+        logger.error('Error in renameAlbum controller:', err);
         return res.status(500).json({ success: false, error: 'Internal Server Error' });
     }
 }
@@ -256,7 +288,7 @@ export const getAllAlbums = async (req, res) => {
             albums,
         });
     } catch (err) {
-        console.error('Error in getAllAlbums controller:', err);
+        logger.error('Error in getAllAlbums controller:', err);
         return res.status(500).json({ success: false, error: 'Internal Server Error' });
     }
 }
@@ -292,7 +324,7 @@ export const editVideoName = async (req, res) => {
             }
         });
     } catch (err) {
-        console.error('Error in editVideoName controller:', err);
+        logger.error('Error in editVideoName controller:', err);
         return res.status(500).json({ success: false, error: 'Internal Server Error' });
     }
 }

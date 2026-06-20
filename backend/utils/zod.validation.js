@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import logger from './logger.js';
 
 // Common validation schemas
 const mongoIdSchema = z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid MongoDB ID');
@@ -155,7 +156,7 @@ export const validateRequest = (schema) => {
       req.validatedData = result.data;
       next();
     } catch (error) {
-      console.error('Validation middleware error:', error);
+      logger.error('Validation middleware error:', error);
       return res.status(500).json({
         type: 'error',
         error: 'Internal validation error',

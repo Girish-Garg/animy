@@ -2,7 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { X, Plus, ChevronDown, Loader2 } from 'lucide-react';
 import gsap from 'gsap';
 import { toast } from 'sonner';
-import { apiUtils } from '@/lib/apiClient';
+import { albumsApi } from '@/api/albums';
+import { useAlbums } from '@/hooks/useAlbums';
+import { useModalA11y } from '@/hooks/useModalA11y';
+import VideoThumbnail from '@/components/common/VideoThumbnail';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,39 +25,17 @@ const AddToAlbumOverlay = ({
   const contentRef = useRef(null);
   const [videoName, setVideoName] = useState('');
   const [selectedAlbum, setSelectedAlbum] = useState(null);
-  const [albums, setAlbums] = useState([]);
   const [isAdding, setIsAdding] = useState(false);
-  const [loadingAlbums, setLoadingAlbums] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const { albums, loading: loadingAlbums } = useAlbums(isOpen);
 
-  // Fetch albums when component opens
+  // Reset the form whenever the overlay opens
   useEffect(() => {
     if (isOpen) {
-      fetchAlbums();
-      setVideoName(''); // Reset video name
-      setSelectedAlbum(null); // Reset selected album
+      setVideoName('');
+      setSelectedAlbum(null);
     }
   }, [isOpen]);
-
-  const fetchAlbums = async () => {
-    setLoadingAlbums(true);
-    
-    try {
-      const response = await apiUtils.get('/album/');
-
-      if (response.data.success) {
-        console.log('Fetched albums:', response.data.albums); // Debug log to see album structure
-        setAlbums(response.data.albums);
-      } else {
-        toast.error('Failed to load albums');
-      }
-    } catch (err) {
-      console.error('Error fetching albums:', err);
-      toast.error('Failed to load albums. Please try again.');
-    } finally {
-      setLoadingAlbums(false);
-    }
-  };
 
   useEffect(() => {
     if (isOpen && contentRef.current) {
@@ -100,6 +81,8 @@ const AddToAlbumOverlay = ({
     }, '-=0.15');
   };
 
+  useModalA11y(contentRef, isOpen, handleClose);
+
   const handleAddToAlbum = async () => {
     if (!videoName.trim()) {
       toast.error('Please enter a video name');
@@ -116,14 +99,10 @@ const AddToAlbumOverlay = ({
       return;
     }
 
-    console.log('Selected album:', selectedAlbum); // Debug log to see album structure
-    console.log('Album ID:', selectedAlbum._id || selectedAlbum.id); // Check both possible ID fields
-
     setIsAdding(true);
 
     try {
-      // Use _id if available, fallback to id
-      const albumId = selectedAlbum._id;
+      const albumId = selectedAlbum.id;
       
       if (!albumId) {
         toast.error('Invalid album selected. Please try again.');
@@ -131,9 +110,7 @@ const AddToAlbumOverlay = ({
         return;
       }
 
-      const response = await apiUtils.patch(
-        `/album/${albumId}/video`,
-        {   
+      const data = await albumsApi.addVideo(albumId, {
             name: videoName.trim(),
             video:{
                 videoPath: videoPath,
@@ -143,9 +120,9 @@ const AddToAlbumOverlay = ({
         }
       );
 
-      if (response.data.success) {
+      if (data.success) {
         if (onVideoAdded) {
-          onVideoAdded(response.data);
+          onVideoAdded(data);
         }
         handleClose();
       } else {
@@ -175,6 +152,10 @@ const AddToAlbumOverlay = ({
       {/* Content Container */}
       <div
         ref={contentRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Add Video to Album"
+        tabIndex={-1}
         className="relative w-full max-w-md bg-gradient-to-br from-[#001138] to-[#0c1d43] rounded-2xl shadow-2xl border border-blue-900/30 overflow-hidden"
       >
         {/* Header */}
@@ -221,7 +202,7 @@ const AddToAlbumOverlay = ({
                 >
                   <span className="truncate">
                     {loadingAlbums ? 'Loading albums...' : 
-                     selectedAlbum ? selectedAlbum.albumName : 'Choose an album'}
+                     selectedAlbum ? selectedAlbum.name : 'Choose an album'}
                   </span>
                   {loadingAlbums ? (
                     <Loader2 size={16} className="animate-spin text-gray-400" />
@@ -241,7 +222,7 @@ const AddToAlbumOverlay = ({
                 ) : (
                   albums.map((album) => (
                     <DropdownMenuItem
-                      key={album._id || album.id}
+                      key={album.id}
                       className="text-gray-300 hover:!text-white hover:!bg-blue-900/30 focus:!bg-blue-900/30 focus:!text-white cursor-pointer"
                       onClick={() => {
                         setSelectedAlbum(album);
@@ -249,7 +230,7 @@ const AddToAlbumOverlay = ({
                       }}
                     >
                       <div className="flex flex-col">
-                        <span className="font-medium">{album.albumName}</span>
+                        <span className="font-medium">{album.name}</span>
                         <span className="text-xs text-gray-400">
                           {album.videos?.length || 0} videos
                         </span>
@@ -269,8 +250,9 @@ const AddToAlbumOverlay = ({
               </label>
               <div className="flex items-center gap-3 p-3 bg-blue-900/10 border border-blue-800/20 rounded-lg">
                 {thumbnailPath && (
-                  <img
-                    src={thumbnailPath}
+                  <VideoThumbnail
+                    thumbnailPath={thumbnailPath}
+                    videoPath={videoPath}
                     alt="Video thumbnail"
                     className="w-12 h-8 object-cover rounded"
                   />
@@ -278,9 +260,6 @@ const AddToAlbumOverlay = ({
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-white truncate">
                     Video ready to add
-                  </p>
-                  <p className="text-xs text-gray-400">
-                    Chat ID: {chatId}
                   </p>
                 </div>
               </div>

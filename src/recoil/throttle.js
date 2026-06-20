@@ -36,11 +36,13 @@ export const throttleStatusSelector = selector({
   },
 });
 
-// Atom to track if video generation is in progress (global)
+// Atom to track if video generation is in progress (global).
+// NOT persisted: "is a video generating" is owned by the backend
+// (prompt.status). Persisting it stranded the flag as `true` across reloads
+// and stops; it is now reconciled from backend data on load instead.
 export const isGeneratingAtom = atom({
   key: 'isGeneratingAtom',
   default: {
     isGenerating: false,
   },
-  effects_UNSTABLE: [persistAtom],
 });

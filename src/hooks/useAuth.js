@@ -1,40 +1,26 @@
-import { useEffect } from 'react';
 import { useAuth } from '@clerk/clerk-react';
-import authManager from '@/lib/authManager';
+import { setTokenGetter, clearTokenGetter } from '@/lib/tokenBridge';
 
 /**
- * Hook to initialize the authentication manager with Clerk
- * This should be used once in your app's root component (App.jsx or main layout)
+ * Registers Clerk's getToken() with the token bridge so the (non-React) axios
+ * interceptor can attach a fresh token to every request. Use once at the app
+ * root (App.jsx).
+ *
+ * Registration happens during render (not in an effect) so the getter is
+ * available before any child component's effects fire an API call — this is
+ * what lets us drop the old "wait for auth to initialize" setTimeout hacks.
+ * The bridge is a module singleton, so repeated calls are idempotent.
  */
 export const useAuthInit = () => {
   const { getToken, isSignedIn, isLoaded } = useAuth();
 
-  useEffect(() => {
-    if (isLoaded && isSignedIn) {
-      authManager.initialize(getToken);
-    } else if (isLoaded && !isSignedIn) {
-      authManager.clearToken();
+  if (isLoaded) {
+    if (isSignedIn) {
+      setTokenGetter(getToken);
+    } else {
+      clearTokenGetter();
     }
-  }, [getToken, isSignedIn, isLoaded]);
+  }
 
-  return {
-    isAuthenticated: isLoaded && isSignedIn && authManager.isAuthenticated(),
-    isLoaded,
-    isSignedIn
-  };
-};
-
-/**
- * Hook to get authentication status without initializing
- * Use this in components that need to check auth state
- */
-export const useAuthStatus = () => {
-  const { isSignedIn, isLoaded } = useAuth();
-  
-  return {
-    isAuthenticated: isLoaded && isSignedIn && authManager.isAuthenticated(),
-    isLoaded,
-    isSignedIn,
-    currentToken: authManager.getCurrentToken()
-  };
+  return { isLoaded, isSignedIn };
 };

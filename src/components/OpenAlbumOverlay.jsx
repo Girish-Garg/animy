@@ -1,7 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, ChevronLeft, MoreVertical, Edit3, Trash2, Download } from 'lucide-react';
 import gsap from 'gsap';
-import { apiUtils } from '@/lib/apiClient';
+import { albumsApi } from '@/api/albums';
+import { normalizeVideo } from '@/api/normalize';
+import VideoThumbnail from '@/components/common/VideoThumbnail';
+import ConfirmDialog from '@/components/common/ConfirmDialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,6 +35,7 @@ const OpenAlbumOverlay = ({
   const [error, setError] = useState(null);
   const [deletingVideoId, setDeletingVideoId] = useState(null);
   const [renamingVideoId, setRenamingVideoId] = useState(null);
+  const [videoToDelete, setVideoToDelete] = useState(null);
 
   // Function to fetch album details and videos
   const fetchAlbumVideos = async () => {
@@ -41,23 +45,16 @@ const OpenAlbumOverlay = ({
     setError(null);
     
     try {
-      const response = await apiUtils.get(`/album/${album.id}`);
+      const data = await albumsApi.get(album.id);
 
-      if (response.data.success) {
-        setAlbumData(response.data.album);
-        // Transform videos to match component structure
-        const transformedVideos = response.data.album.videos.map(video => ({
-          id: video._id || Math.random().toString(36),
-          path: video.videoPath,
-          title: video.name,
-          thumbnailPath: video.thumbnailPath
-        }));
-        setVideos(transformedVideos);
+      if (data.success) {
+        setAlbumData(data.album);
+        setVideos(data.album.videos.map(normalizeVideo));
       } else {
         setError('Failed to fetch album videos');
         toast.error('Failed to load album videos');
       }
-    } catch (err) {
+    } catch {
       setError('Failed to fetch album videos. Please try again.');
       toast.error('Failed to load album videos. Please check your connection.');
     } finally {
@@ -72,21 +69,12 @@ const OpenAlbumOverlay = ({
     setDeletingVideoId(video.id);
     
     try {
-      const response = await apiUtils.delete(`/album/${album.id}/video/${video.id}`);
+      const data = await albumsApi.removeVideo(album.id, video.id);
 
-      if (response.data.success) {
-        // Update the album data and videos from the response
-        setAlbumData(response.data.album);
-        
-        // Transform the updated videos
-        const transformedVideos = response.data.album.videos.map(video => ({
-          id: video._id || Math.random().toString(36),
-          path: video.videoPath,
-          title: video.name,
-          thumbnailPath: video.thumbnailPath
-        }));
-        setVideos(transformedVideos);
-        
+      if (data.success) {
+        setAlbumData(data.album);
+        setVideos(data.album.videos.map(normalizeVideo));
+
         // Close the video player if the deleted video was being played
         if (selectedVideo?.id === video.id) {
           setShowVideoPlayer(false);
@@ -95,7 +83,7 @@ const OpenAlbumOverlay = ({
       } else {
         toast.error('Failed to delete video. Please try again.');
       }
-    } catch (err) {
+    } catch {
       toast.error('Failed to delete video. Please try again.');
     } finally {
       setDeletingVideoId(null);
@@ -199,24 +187,13 @@ const OpenAlbumOverlay = ({
       setVideoBlurEnabled(true);
       
       try {
-        const response = await apiUtils.patch(
-          `/album/${album.id}/video/${videoId}/rename`,
-          { newVideoName: editingVideoName.trim() }
-        );
+        const data = await albumsApi.renameVideo(album.id, videoId, editingVideoName.trim());
 
-        if (response.data.success) {
-          // Update the album data and videos from the response
-          setAlbumData(response.data.album);
-          
-          // Transform the updated videos
-          const transformedVideos = response.data.album.videos.map(video => ({
-            id: video._id || Math.random().toString(36),
-            path: video.videoPath,
-            title: video.name,
-            thumbnailPath: video.thumbnailPath
-          }));
+        if (data.success) {
+          setAlbumData(data.album);
+          const transformedVideos = data.album.videos.map(normalizeVideo);
           setVideos(transformedVideos);
-          
+
           // Update the selected video if it was the one being renamed
           if (selectedVideo?.id === videoId) {
             const updatedVideo = transformedVideos.find(v => v.id === videoId);
@@ -229,7 +206,7 @@ const OpenAlbumOverlay = ({
           setVideos(originalVideos);
           toast.error('Failed to rename video. Please try again.');
         }
-      } catch (err) {
+      } catch {
         setVideos(originalVideos);
         toast.error('Failed to rename video. Please try again.');
       } finally {
@@ -255,20 +232,23 @@ const OpenAlbumOverlay = ({
       return;
     }
 
+    // Only follow http(s) URLs to avoid javascript:/data: injection.
+    if (!/^https?:\/\//i.test(video.path)) {
+      toast.error('Video file not available for download');
+      return;
+    }
+
     try {
-      // Create a temporary anchor element to trigger download
       const link = document.createElement('a');
       link.href = video.path;
-      link.download = `${video.title || 'video'}.mp4`; // Default to .mp4 extension
+      link.download = `${video.title || 'video'}.mp4`;
       link.target = '_blank';
-      
-      // Append to body temporarily
+      link.rel = 'noopener noreferrer';
+
       document.body.appendChild(link);
       link.click();
-      
-      // Clean up
       document.body.removeChild(link);
-    } catch (err) {
+    } catch {
       toast.error('Failed to download video. Please try again.');
     }
   };
@@ -298,7 +278,18 @@ const OpenAlbumOverlay = ({
         currentIndex={currentVideoIndex}
         onVideoChange={handleVideoChange}
         autoPlay={true}
-        showPlaylist={videos.length > 1}
+      />
+      <ConfirmDialog
+        isOpen={!!videoToDelete}
+        title="Delete video?"
+        message={videoToDelete ? `"${videoToDelete.title || 'This video'}" will be permanently removed from the album.` : ''}
+        confirmLabel="Delete"
+        onCancel={() => setVideoToDelete(null)}
+        onConfirm={() => {
+          const v = videoToDelete;
+          setVideoToDelete(null);
+          if (v) handleDeleteVideo(v);
+        }}
       />
       <div ref={contentRef} className="w-full h-full">
       {/* Header */}
@@ -364,7 +355,7 @@ const OpenAlbumOverlay = ({
 
         {/* Videos Grid */}
         {!loading && !error && (
-          <div className="grid grid-rows-3 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {videos.map((video, index) => (
             <div
               key={video.id || index}
@@ -374,47 +365,12 @@ const OpenAlbumOverlay = ({
               onMouseLeave={() => setHoveredVideoId(null)}
               onClick={() => (deletingVideoId !== video.id && renamingVideoId !== video.id) && handleVideoClick(video, index)}
             >
-              {video.thumbnailPath ? (
-                <img
-                  className="absolute inset-0 w-full h-full object-cover"
-                  src={video.thumbnailPath}
-                  alt={video.title || `Video ${index + 1}`}
-                  onError={(e) => {
-                    // Fallback to video if thumbnail fails
-                    if (video.path) {
-                      const videoEl = document.createElement('video');
-                      videoEl.className = "absolute inset-0 w-full h-full object-cover";
-                      videoEl.src = video.path;
-                      videoEl.poster = "/placeholder-image.jpg";
-                      videoEl.muted = true;
-                      videoEl.onmouseover = (evt) => evt.currentTarget.play();
-                      videoEl.onmouseout = (evt) => {
-                        evt.currentTarget.pause();
-                        evt.currentTarget.currentTime = 0;
-                      };
-                      e.target.replaceWith(videoEl);
-                    } else {
-                      // Show placeholder
-                      const div = document.createElement('div');
-                      div.className = `absolute inset-0 w-full h-full placeholder-${(index % 4) + 1} flex items-center justify-center`;
-                      div.innerHTML = `<div class="text-4xl text-white/60 font-bold">${index + 1}</div>`;
-                      e.target.replaceWith(div);
-                    }
-                  }}
-                />
-              ) : video.path ? (
-                <video
-                  className="absolute inset-0 w-full h-full object-cover"
-                  src={video.path}
-                  poster="/placeholder-image.jpg"
-                  muted
-                  onMouseOver={(e) => e.currentTarget.play()}
-                  onMouseOut={(e) => {
-                    e.currentTarget.pause();
-                    e.currentTarget.currentTime = 0;
-                  }}
-                />
-              ) : null}
+              <VideoThumbnail
+                className="absolute inset-0 w-full h-full object-cover"
+                thumbnailPath={video.thumbnailPath}
+                videoPath={video.path}
+                alt={video.title || `Video ${index + 1}`}
+              />
 
               {/* Glass overlay on hover */}
               <div className={`absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent transition-opacity flex flex-col justify-end p-4 ${hoveredVideoId === video.id || openVideoDropdownId === video.id ? 'opacity-100' : 'opacity-0'
@@ -503,7 +459,7 @@ const OpenAlbumOverlay = ({
                         className={`text-red-400 hover:!text-red-400 hover:!bg-red-900/30 cursor-pointer ${deletingVideoId === video.id ? 'opacity-50 pointer-events-none' : ''}`}
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleDeleteVideo(video);
+                          setVideoToDelete(video);
                         }}
                       >
                         <Trash2 className="mr-2 h-4 w-4 text-red-400" />

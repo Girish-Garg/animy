@@ -1,7 +1,8 @@
-import axios from "axios";
+import videoApi from "../utils/videoApi.js";
 import Prompt from "../schema/prompt.schema.js";
 import Chat from "../schema/chat.schema.js";
 import { sendSuccessMail } from "../utils/sendSuccessMain.js";
+import logger from "../utils/logger.js";
 // In-memory map to track polling jobs (promptId -> true)
 const pollingJobs = {};
 
@@ -12,7 +13,13 @@ export const generateVideo = async (req, res) => {
         const { chatId } = req.validatedData.params;
         const { prompt } = req.validatedData.body;
 
-        const GenerateResponse = await axios.post(`${process.env.Video_API_BASE_URL}/video/generate`, {
+        // Authorization: the chat must belong to the requesting user.
+        const chat = await Chat.findOne({ _id: chatId, userId: user._id });
+        if (!chat) {
+            return res.status(404).json({ success: false, error: 'Chat not found or unauthorized' });
+        }
+
+        const GenerateResponse = await videoApi.post(`${process.env.Video_API_BASE_URL}/video/generate`, {
             prompt,
             userId: user._id,
             chatId: chatId,
@@ -43,7 +50,7 @@ export const generateVideo = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error in generateVideo controller:', error);
+        logger.error('Error in generateVideo controller:', error);
         return res.status(500).json({ success: false, error: 'Internal Server Error' });
     }
 }
@@ -54,13 +61,18 @@ export const getVideoStatus = async (req, res) => {
     try {
         const user = req.user;
         ({ chatId, promptId } = req.validatedData.params);
-        console.log(`Fetching video status for chatId: ${chatId}, promptId: ${promptId}`);
 
         // Check local prompt status FIRST before making external API call
         if (promptId) {
             existingPrompt = await Prompt.findById(promptId);
 
             if (!existingPrompt) {
+                return res.status(404).json({ success: false, error: 'Prompt not found' });
+            }
+
+            // Authorization: the prompt's chat must belong to the requesting user.
+            const ownerChat = await Chat.findOne({ _id: existingPrompt.chatId, userId: user._id });
+            if (!ownerChat) {
                 return res.status(404).json({ success: false, error: 'Prompt not found' });
             }
 
@@ -106,7 +118,7 @@ export const getVideoStatus = async (req, res) => {
                     let done = false;
                     while (!done && pollAttempts < maxPolls) {
                         try {
-                            const pollResponse = await axios.get(`${process.env.Video_API_BASE_URL}/video/status/${user._id}/${chatId}`);
+                            const pollResponse = await videoApi.get(`${process.env.Video_API_BASE_URL}/video/status/${user._id}/${chatId}`);
                             if (!pollResponse.data.success) {
                                 // Optionally log error
                                 break;
@@ -177,9 +189,9 @@ export const getVideoStatus = async (req, res) => {
         });
 
     } catch (error) {
-        const existingPrompt = await Prompt.findById(promptId);
-        if (error.status == 404 || error.status == 500) {
-            await Prompt.findByIdAndUpdate(existingPrompt._id, {
+        const failedPrompt = promptId ? await Prompt.findById(promptId) : null;
+        if (failedPrompt && (error.status == 404 || error.status == 500)) {
+            await Prompt.findByIdAndUpdate(failedPrompt._id, {
                     status: "failed",
                     errorMessage: 'Failed to generate video via external API',
             });
@@ -198,9 +210,7 @@ export const killStatus = async (req, res) => {
     try {
         const user = req.user;
         const { chatId, promptId } = req.validatedData.params;
-        
-        console.log(`Killing video generation for user: ${user._id}, chatId: ${chatId}, promptId: ${promptId}`);
-        
+
         // Find the prompt
         const existingPrompt = await Prompt.findById(promptId);
         
@@ -211,14 +221,18 @@ export const killStatus = async (req, res) => {
             });
         }
 
+        // Authorization: the prompt's chat must belong to the requesting user.
+        const ownerChat = await Chat.findOne({ _id: existingPrompt.chatId, userId: user._id });
+        if (!ownerChat) {
+            return res.status(404).json({ success: false, error: 'Prompt not found' });
+        }
+
         await Prompt.findByIdAndUpdate(promptId, {
             status: "cancelled",
             errorMessage: 'Video generation cancelled by user',
             updatedAt: new Date()
         });
-        
-        console.log(`Video generation cancelled for promptId: ${promptId}`);
-        
+
         return res.status(200).json({
             success: true,
             message: 'Video generation cancelled successfully',
@@ -227,7 +241,7 @@ export const killStatus = async (req, res) => {
             promptId: promptId
         });
     } catch (error) {
-        console.error('Error in killStatus controller:', error);
+        logger.error('Error in killStatus controller:', error);
         return res.status(500).json({ type: 'error', error: 'Internal Server Error' });
     }
 }

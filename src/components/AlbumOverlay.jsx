@@ -1,7 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { X, FolderOpen, MoreVertical, Edit3, Trash2, Play } from 'lucide-react';
 import gsap from 'gsap';
-import { apiUtils } from '@/lib/apiClient';
+import { albumsApi } from '@/api/albums';
+import { useModalA11y } from '@/hooks/useModalA11y';
+import VideoThumbnail from '@/components/common/VideoThumbnail';
+import ConfirmDialog from '@/components/common/ConfirmDialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,6 +15,21 @@ import './AlbumOverlay.css';
 import { toast, Toaster } from 'sonner';
 import CreateAlbumOverlay from './CreateAlbumOverlay';
 import OpenAlbumOverlay from './OpenAlbumOverlay';
+
+// Map a backend album to the shape this overlay renders (uses the real _id
+// for keys instead of a random fallback).
+const toAlbum = (album) => ({
+  id: album._id,
+  albumName: album.albumName,
+  videos: (album.videos || []).map((video) => ({
+    id: video._id,
+    path: video.videoPath,
+    title: video.name,
+    thumbnailPath: video.thumbnailPath,
+  })),
+  createdAt: album.createdAt,
+  updatedAt: album.updatedAt,
+});
 
 const AlbumOverlay = ({ isOpen, onClose, initialAlbumId }) => {
   const overlayRef = useRef(null);
@@ -26,37 +44,23 @@ const AlbumOverlay = ({ isOpen, onClose, initialAlbumId }) => {
   const [albums, setAlbums] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [renamingAlbumId, setRenamingAlbumId] = useState(null);
   const [deletingAlbumId, setDeletingAlbumId] = useState(null);
   const [showCreateAlbum, setShowCreateAlbum] = useState(false);
+  const [albumToDelete, setAlbumToDelete] = useState(null);
 
   // Function to fetch albums from API
   const fetchAlbums = async () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await apiUtils.get('/album/');
+      const data = await albumsApi.list();
 
-      if (response.data.success) {
-        // Transform API data to match component structure
-        const transformedAlbums = response.data.albums.map(album => ({
-          id: album._id,
-          albumName: album.albumName,
-          coverImage: album.videos.length > 0 ? album.videos[0].thumbnailPath : '',
-          videos: album.videos.map(video => ({
-            id: video._id || Math.random().toString(36),
-            path: video.videoPath,
-            title: video.name,
-            thumbnailPath: video.thumbnailPath
-          })),
-          createdAt: album.createdAt,
-          updatedAt: album.updatedAt
-        }));
-        setAlbums(transformedAlbums);
+      if (data.success) {
+        setAlbums(data.albums.map(toAlbum));
       } else {
         setError('Failed to fetch albums');
       }
-    } catch (err) {
+    } catch {
       setError('Failed to fetch albums. Please try again.');
     } finally {
       setLoading(false);
@@ -171,6 +175,8 @@ const AlbumOverlay = ({ isOpen, onClose, initialAlbumId }) => {
       }, '-=0.15');
   };
 
+  useModalA11y(contentRef, isOpen, handleClose);
+
   const handleBackToAlbums = () => {
     setSelectedAlbum(null);
     setCurrentView('albums');
@@ -196,8 +202,6 @@ const AlbumOverlay = ({ isOpen, onClose, initialAlbumId }) => {
 
   const handleSaveAlbumName = async (albumId) => {
     if (editingAlbumName.trim()) {
-      // Set loading state for this specific album
-      setRenamingAlbumId(albumId);
       
       // Optimistic update - update UI immediately
       const originalAlbums = [...albums];
@@ -214,34 +218,17 @@ const AlbumOverlay = ({ isOpen, onClose, initialAlbumId }) => {
       setBlurEnabled(true);
       
       try {
-        const response = await apiUtils.patch(`/album/${albumId}/rename`, {
-          newAlbumName: editingAlbumName.trim()
-        });
+        const data = await albumsApi.rename(albumId, editingAlbumName.trim());
 
-        if (response.data.success) {
-          const transformedAlbums = response.data.albums.map(album => ({
-            id: album._id,
-            albumName: album.albumName,
-            coverImage: album.videos.length > 0 ? album.videos[0].thumbnailPath : '',
-            videos: album.videos.map(video => ({
-              id: video._id || Math.random().toString(36),
-              path: video.videoPath,
-              title: video.name,
-              thumbnailPath: video.thumbnailPath
-            })),
-            createdAt: album.createdAt,
-            updatedAt: album.updatedAt
-          }));
-          setAlbums(transformedAlbums);
+        if (data.success) {
+          setAlbums(data.albums.map(toAlbum));
         } else {
           setAlbums(originalAlbums);
           toast.error('Failed to rename album. Please try again.');
         }
-      } catch (error) {
+      } catch {
         setAlbums(originalAlbums);
         toast.error('Failed to rename album. Please check your connection and try again.');
-      } finally {
-        setRenamingAlbumId(null);
       }
     } else {
       // Just exit editing mode if name is empty
@@ -257,38 +244,23 @@ const AlbumOverlay = ({ isOpen, onClose, initialAlbumId }) => {
     setBlurEnabled(true);
   };
 
-  const handleDeleteAlbum = async (albumId, albumName) => {
-    // Set loading state for this specific album
+  const handleDeleteAlbum = async (albumId) => {
     setDeletingAlbumId(albumId);
-    
+
     // Optimistic update - remove album from UI immediately
     const originalAlbums = [...albums];
-    const optimisticAlbums = albums.filter(album => album.id !== albumId);
-    setAlbums(optimisticAlbums);
-    
-    try {
-      const response = await apiUtils.delete(`/album/${albumId}`);
+    setAlbums(albums.filter((album) => album.id !== albumId));
 
-      if (response.data.success) {
-        const transformedAlbums = response.data.albums.map(album => ({
-          id: album._id,
-          albumName: album.albumName,
-          coverImage: album.videos.length > 0 ? album.videos[0].thumbnailPath : '',
-          videos: album.videos.map(video => ({
-            id: video._id || Math.random().toString(36),
-            path: video.videoPath,
-            title: video.name,
-            thumbnailPath: video.thumbnailPath
-          })),
-          createdAt: album.createdAt,
-          updatedAt: album.updatedAt
-        }));
-        setAlbums(transformedAlbums);
+    try {
+      const data = await albumsApi.remove(albumId);
+
+      if (data.success) {
+        setAlbums(data.albums.map(toAlbum));
       } else {
         setAlbums(originalAlbums);
         toast.error('Failed to delete album. Please try again.');
       }
-    } catch (error) {
+    } catch {
       setAlbums(originalAlbums);
       toast.error('Failed to delete album. Please check your connection and try again.');
     } finally {
@@ -305,10 +277,22 @@ const AlbumOverlay = ({ isOpen, onClose, initialAlbumId }) => {
   return (
     <>
       <Toaster position='top-center' richColors />
-      <CreateAlbumOverlay 
+      <CreateAlbumOverlay
         isOpen={showCreateAlbum}
         onClose={() => setShowCreateAlbum(false)}
         onAlbumCreated={handleAlbumCreated}
+      />
+      <ConfirmDialog
+        isOpen={!!albumToDelete}
+        title="Delete album?"
+        message={albumToDelete ? `"${albumToDelete.albumName}" and its videos will be permanently deleted.` : ''}
+        confirmLabel="Delete"
+        onCancel={() => setAlbumToDelete(null)}
+        onConfirm={() => {
+          const id = albumToDelete?.id;
+          setAlbumToDelete(null);
+          if (id) handleDeleteAlbum(id);
+        }}
       />
       <div
         ref={overlayRef}
@@ -323,6 +307,10 @@ const AlbumOverlay = ({ isOpen, onClose, initialAlbumId }) => {
         {/* Content Container */}
         <div
           ref={contentRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label="My Albums"
+          tabIndex={-1}
           className={`relative w-full rounded-2xl glassmorphism shadow-2xl ${
             currentView === 'videos' 
               ? 'max-w-5xl overflow-auto' 
@@ -419,41 +407,12 @@ const AlbumOverlay = ({ isOpen, onClose, initialAlbumId }) => {
                           }}
                         >
                           {album.videos && album.videos.length > 0 ? (
-                            album.videos[0].thumbnailPath ? (
-                              // Show actual video thumbnail
-                              <img
-                                className="w-full h-full object-cover"
-                                src={album.videos[0].thumbnailPath}
-                                alt={album.albumName}
-                                onError={(e) => {
-                                  // Fallback to video if thumbnail fails
-                                  if (album.videos[0].path) {
-                                    const video = document.createElement('video');
-                                    video.className = "w-full h-full object-cover";
-                                    video.src = album.videos[0].path;
-                                    video.muted = true;
-                                    video.preload = "metadata";
-                                    e.target.replaceWith(video);
-                                  } else {
-                                    // Show placeholder
-                                    const div = document.createElement('div');
-                                    div.className = `w-full h-full placeholder-${(index % 4) + 1}`;
-                                    e.target.replaceWith(div);
-                                  }
-                                }}
-                              />
-                            ) : album.videos[0].path ? (
-                              // Show video as fallback
-                              <video
-                                className="w-full h-full object-cover"
-                                src={album.videos[0].path}
-                                muted
-                                preload="metadata"
-                              />
-                            ) : (
-                              // Show placeholder for first video
-                              <div className={`w-full h-full placeholder-${(index % 4) + 1}`}></div>
-                            )
+                            <VideoThumbnail
+                              className="w-full h-full object-cover"
+                              thumbnailPath={album.videos[0].thumbnailPath}
+                              videoPath={album.videos[0].path}
+                              alt={album.albumName}
+                            />
                           ) : (
                             // Show empty album placeholder
                             <div className={`w-full h-full placeholder-${(index % 4) + 1} flex items-center justify-center`}>
@@ -544,7 +503,7 @@ const AlbumOverlay = ({ isOpen, onClose, initialAlbumId }) => {
                                 className='text-red-400 hover:!text-red-400 hover:!bg-red-900/30 cursor-pointer'
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleDeleteAlbum(album.id, album.albumName);
+                                  setAlbumToDelete(album);
                                 }}
                               >
                                 <Trash2 className="mr-2 h-4 w-4 text-red-400" />

@@ -1,4 +1,5 @@
 import { validateRequest } from '../utils/zod.validation.js';
+import logger from '../utils/logger.js';
 
 // Re-export validation middleware for easier imports
 export { validateRequest };
@@ -25,7 +26,7 @@ export const validateQueryParams = (schema) => {
       req.validatedQuery = result.data;
       next();
     } catch (error) {
-      console.error('Query validation error:', error);
+      logger.error('Query validation error:', error);
       return res.status(500).json({
         type: 'error',
         error: 'Internal validation error',

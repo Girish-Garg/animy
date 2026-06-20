@@ -3,8 +3,8 @@ import { useRecoilState, useRecoilValue } from 'recoil';
 import { isThrottleAtom, throttleStatusSelector, isGeneratingAtom } from '../recoil/throttle';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { apiUtils } from '@/lib/apiClient';
+import { findActiveGeneratingPrompt } from '@/lib/generationStatus';
 import { useAuth } from '@clerk/clerk-react';
-import authManager from '@/lib/authManager';
 import {
   SidebarProvider,
   Sidebar,
@@ -16,7 +16,6 @@ import {
   SidebarMenuButton,
   SidebarGroupLabel,
   SidebarInset,
-  useSidebar,
 } from "@/components/ui/sidebar";
 import AlbumOverlay from '../components/AlbumOverlay';
 import AddToAlbumOverlay from '../components/AddToAlbumOverlay';
@@ -28,10 +27,8 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
-import { 
-  HelpCircleIcon,
+import {
   BellIcon,
-  PanelLeft,
   Folder,
   MessageSquarePlus,
   SendIcon,
@@ -50,19 +47,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from '@/components/ui/skeleton';
-
-function CustomTrigger() {
-  const { toggleSidebar } = useSidebar();
-  return (
-    <button 
-      onClick={toggleSidebar} 
-      className="group hover:cursor-pointer p-2 hover:bg-[#1A1F37]/40 rounded-lg transition-all duration-100"
-    >
-      <PanelLeft className="size-[18px] text-[#a0aec0] group-hover:text-white transition-colors" />
-      <span className="sr-only">Toggle Sidebar</span>
-    </button>
-  );
-}
+import CustomTrigger from '@/components/layout/CustomTrigger';
+import SidebarHelpCard from '@/components/layout/SidebarHelpCard';
 
 export default function Layout() {
 
@@ -70,21 +56,20 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const { getToken, isSignedIn, isLoaded } = useAuth();
+  const { isSignedIn, isLoaded } = useAuth();
   const [activePage, setActivePage] = useState('dashboard');
   const [albumOverlayOpen, setAlbumOverlayOpen] = useState(false);  
-  const [selectedAlbum, setSelectedAlbum] = useState(null);
+  const [selectedAlbum] = useState(null);
   const [addToAlbumOverlayOpen, setAddToAlbumOverlayOpen] = useState(false);
   const [selectedVideoData, setSelectedVideoData] = useState(null);
   const [activeChat, setActiveChat] = useState(null);
   const [inputValue, setInputValue] = useState('');
   const [hoveredChatId, setHoveredChatId] = useState(null);
   const [openDropdownId, setOpenDropdownId] = useState(null);
-  const [isAuthInitialized, setIsAuthInitialized] = useState(false);
   const [editingChatId, setEditingChatId] = useState(null);
   const [editingChatName, setEditingChatName] = useState('');
   const [blurEnabled, setBlurEnabled] = useState(true);
-  const [throttleState, setThrottleState] = useRecoilState(isThrottleAtom);
+  const [, setThrottleState] = useRecoilState(isThrottleAtom);
   const { isThrottled, throttleTimeRemaining } = useRecoilValue(throttleStatusSelector);
 
   const [isGenerating, setIsGenerating] = useRecoilState(isGeneratingAtom);
@@ -100,13 +85,6 @@ export default function Layout() {
     }, 1000);
     return () => clearInterval(interval);
   }, [isThrottled, throttleTimeRemaining]);
-
-  useEffect(() => {
-    if(!isSignedIn && isLoaded) {
-      navigate('/signin');
-    }
-  }, [isSignedIn, isLoaded]);
-
 
   // Set throttle after sending a prompt (always 10 minutes = 600 seconds)
   const applyThrottle = (createdAt) => {
@@ -181,7 +159,7 @@ export default function Layout() {
               prompts: prevData.prompts.filter(p => p._id !== userPrompt._id)
             }));
           }
-        } catch (error) {
+        } catch {
           setGeneratingMessage('Failed to send message');
           setGeneratingPromptId(null);
           setIsGenerating({
@@ -230,7 +208,7 @@ export default function Layout() {
         setIsCreatingNewChat(false);
       }
       setIsCreatingNewChat(false);
-    } catch (error) {
+    } catch {
       setIsCreatingNewChat(false);
     }
   };
@@ -242,6 +220,9 @@ export default function Layout() {
   const [generatingMessage, setGeneratingMessage] = useState('');
   const [isCreatingNewChat, setIsCreatingNewChat] = useState(false);
   const pollingIntervalRef = useRef(null);
+  // Tracks which prompt polling is currently for, so a stale in-flight poll
+  // can't resurrect "generating" after the user stops or switches away.
+  const activePromptRef = useRef(null);
 
   // Function to fetch chats from API
   const fetchChats = async () => {
@@ -257,7 +238,7 @@ export default function Layout() {
         }));
         setChatItems(transformedChats);
       }
-    } catch (error) {
+    } catch {
       // Don't log 401 errors as they're handled by the interceptor
     } finally {
       setIsLoading(false);
@@ -267,7 +248,7 @@ export default function Layout() {
   // Function to fetch specific chat data
   const fetchChatData = async (chatId, showLoading = true) => {
     try {
-      if (!isLoaded || !isSignedIn || !isAuthInitialized) {
+      if (!isLoaded || !isSignedIn) {
         return;
       }
       if (showLoading) {
@@ -277,16 +258,21 @@ export default function Layout() {
       const data = response.data;
       if (data.success) {
         setCurrentChatData(data.chat);
-        if (data.chat && data.chat.prompts) {
-          const processingPrompt = data.chat.prompts.find(prompt => 
-            !prompt.video && prompt.status === "processing"
-          );
-          if (processingPrompt) {
-            startPolling(chatId, processingPrompt._id);
-          }
+        const processingPrompt = findActiveGeneratingPrompt(data.chat);
+        if (processingPrompt) {
+          startPolling(chatId, processingPrompt._id);
+        } else {
+          // Backend shows nothing generating — reconcile any stale client
+          // state (fixes "stuck generating" after a stop or reload).
+          activePromptRef.current = null;
+          clearPolling();
+          setGeneratingPromptId(null);
+          setGeneratingMessage('');
+          setIsGenerating({ isGenerating: false });
         }
       }
-    } catch (error) {
+    } catch {
+      // fetch errors are non-fatal here; loading is cleared in finally
     } finally {
       if (showLoading) {
         setIsChatLoading(false);
@@ -298,11 +284,15 @@ export default function Layout() {
   const pollPromptStatus = async (chatId, promptId) => {
     try {
       const response = await apiUtils.get(`/chat/${chatId}/status/${promptId}`);
+      // Ignore stale results: clearPolling() can't cancel an in-flight request,
+      // so a poll dispatched before a stop could otherwise re-flip state.
+      if (activePromptRef.current !== promptId) return;
       const data = response.data;
 
       if (data.success) {
         const status = data.status;
         if (status === 'completed' || status === 'cancelled') {
+          activePromptRef.current = null;
           setGeneratingMessage('');
           setGeneratingPromptId(null);
           setIsGenerating({
@@ -311,6 +301,7 @@ export default function Layout() {
           clearPolling();
           fetchChatData(chatId, false);
         } else if (status === 'failed') {
+          activePromptRef.current = null;
           setGeneratingMessage('');
           setGeneratingPromptId(null);
           setIsGenerating({
@@ -354,6 +345,7 @@ export default function Layout() {
   const startPolling = (chatId, promptId) => {
     clearPolling();
 
+    activePromptRef.current = promptId;
     setGeneratingPromptId(promptId);
     setGeneratingMessage('Starting video generation...');
 
@@ -367,6 +359,7 @@ export default function Layout() {
   // Stop video generation process
   const stopVideoGeneration = async () => {
     if (!generatingPromptId || !activeChat) {
+      activePromptRef.current = null;
       clearPolling();
       setGeneratingPromptId(null);
       setGeneratingMessage('');
@@ -377,9 +370,10 @@ export default function Layout() {
     }
     try {
       await apiUtils.post(`/chat/${activeChat}/kill/${generatingPromptId}`);
-    } catch (error) {
+    } catch {
       // Suppress kill errors in production
     } finally {
+      activePromptRef.current = null;
       clearPolling();
       setGeneratingPromptId(null);
       setGeneratingMessage('');
@@ -407,27 +401,11 @@ export default function Layout() {
   }, [location]);
 
   useEffect(() => {
-    // Initialize auth manager when component mounts
-    if (isLoaded && isSignedIn && getToken) {
-      authManager.initialize(getToken);
-      // Set auth as initialized after a short delay
-      setTimeout(() => {
-        setIsAuthInitialized(true);
-      }, 100);
-    } else {
-      setIsAuthInitialized(false);
-    }
-  }, [isLoaded, isSignedIn, getToken]);
-
-  useEffect(() => {
-    // Only fetch chats when Clerk is loaded and user is signed in
+    // The token bridge is registered at the app root (useAuthInit), so we can
+    // fetch as soon as Clerk reports the user is signed in. RequireAuth handles
+    // redirecting signed-out users, so no navigate is needed here.
     if (isLoaded && isSignedIn) {
-      // Add a small delay to ensure auth manager is initialized
-      setTimeout(() => {
-        fetchChats();
-      }, 300);
-    } else if (isLoaded && !isSignedIn) {
-      navigate('/signin');
+      fetchChats();
     }
   }, [isLoaded, isSignedIn]);
 
@@ -436,7 +414,7 @@ export default function Layout() {
     const chatId = searchParams.get('id');
     const promptId = searchParams.get('promptId');
     
-    if (chatId && location.pathname.includes('/chat/chat') && isLoaded && isSignedIn && isAuthInitialized) {
+    if (chatId && location.pathname.includes('/chat/chat') && isLoaded && isSignedIn) {
       setActiveChat(chatId);
       setActivePage('chat');
       localStorage.setItem('animy_last_chat', chatId);
@@ -457,7 +435,7 @@ export default function Layout() {
         }
       }, 300);
     }
-  }, [searchParams, location.pathname, isLoaded, isSignedIn, isAuthInitialized]);
+  }, [searchParams, location.pathname, isLoaded, isSignedIn]);
 
   useEffect(() => {
     const lastChatId = localStorage.getItem('animy_last_chat');
@@ -472,8 +450,7 @@ export default function Layout() {
     if (lastChatId && 
         !searchParams.get('id') && 
         isLoaded && 
-        isSignedIn && 
-        isAuthInitialized &&
+        isSignedIn &&
         !isOnNewChatPage) {
       const chatExists = chatItems.some(chat => chat.id === lastChatId);
       if (chatExists) {
@@ -481,13 +458,11 @@ export default function Layout() {
         setActivePage('chat');
         // Navigate to the specific chat
         navigate(`/chat/chat?id=${lastChatId}`);
-        // Fetch the chat data when restoring from localStorage with delay
-        setTimeout(() => {
-          fetchChatData(lastChatId);
-        }, 400);
+        // Fetch the chat data when restoring from localStorage
+        fetchChatData(lastChatId);
       }
     }
-  }, [chatItems, isLoaded, isSignedIn, isAuthInitialized, location.pathname, navigate, searchParams]);
+  }, [chatItems, isLoaded, isSignedIn, location.pathname, navigate, searchParams]);
   
   const navItems = [
     { key: 'New Chat', label: 'New Chat', icon: MessageSquarePlus },
@@ -655,7 +630,7 @@ const renderMenuItem = (item) => {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-    } catch (error) {
+    } catch {
       // Suppress download errors in production
     }
   };
@@ -837,35 +812,7 @@ const renderMenuItem = (item) => {
                     </SidebarMenu>
                 </SidebarContent>
                 <SidebarFooter className="mt-auto px-4">                    
-                    <div 
-                        className="m-2 overflow-hidden rounded-2xl min-h-[170px] flex flex-col justify-between p-5 shadow-xl relative border border-blue-900/40 bg-gradient-to-br from-[#060b28]/85 to-[#0a0e23]/85 backdrop-blur-md"
-                    >
-                        <img 
-                            src="/SideBarFooter.png" 
-                            alt="footer bg" 
-                            className="absolute inset-0 w-full h-full object-cover opacity-70 pointer-events-none select-none" 
-                            draggable="false"
-                        />
-                        <div className="flex items-center mb-3 relative z-10">
-                            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white shadow-lg">
-                                <HelpCircleIcon className="h-6 w-6 text-white drop-shadow bg-gradient-to-br from-blue-600 to-blue-400 rounded-full" />
-                            </div>
-                        </div>
-                        <div className="relative z-10">
-                            <h3 className="text-base font-bold text-white drop-shadow">Need help?</h3>
-                            <p className="mt-1 text-xs text-blue-200/90">Please check our docs</p>
-                        </div>                        
-                        <button 
-                            className="mt-4 w-full rounded-xl py-2 px-4 text-sm font-semibold text-white outline-none transition-transform duration-150 hover:scale-[1.03] hover:shadow-xl hover:cursor-pointer focus:ring-2 focus:ring-blue-500/70 focus:ring-offset-2 active:scale-95 border border-blue-700/40 backdrop-blur-md"
-                            style={{
-                              background:
-                                'linear-gradient(127deg, rgba(6, 11, 40, 0.92) 28.26%, rgba(10, 14, 35, 0.91) 91.2%)',
-                            }}
-                            onClick={() => window.location.href = 'mailto:garggirish2020@gmail.com'}
-                        >
-                            CONTACT US
-                        </button>
-                    </div>
+                    <SidebarHelpCard />
                 </SidebarFooter>
             </Sidebar>        
             <SidebarInset className="flex-1 pt-6 bg-transparent text-white overflow-y-auto overflow-x-hidden min-w-0 relative z-10">              
@@ -910,7 +857,7 @@ const renderMenuItem = (item) => {
                         </div>
                       ) : currentChatData && currentChatData.prompts?.length > 0 ? (
                         <div className="space-y-4 pb-4">
-                          {currentChatData.prompts.map((prompt, index) => (
+                          {currentChatData.prompts.map((prompt) => (
                             <div key={prompt._id} className="flex flex-col space-y-3">
                               {/* User Message */}
                               <div className="flex justify-end">

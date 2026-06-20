@@ -1,15 +1,34 @@
 
 import nodemailer from 'nodemailer';
+import logger from './logger.js';
 
-const transporter = nodemailer.createTransport({
-  host: 'smtppro.zoho.in',
-  port: 465,
-  secure: true,
-  auth: {
-    user: 'contact@animy.tech',
-    pass: 'faBwrXKSTg3K'
+// Lazily created so it reads SMTP_* from the environment at send time
+// (robust regardless of when dotenv.config() runs).
+let transporter;
+function getTransporter() {
+  if (!transporter) {
+    transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST || 'smtppro.zoho.in',
+      port: Number(process.env.SMTP_PORT) || 465,
+      secure: true,
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    });
   }
-});
+  return transporter;
+}
+
+// Escape user-supplied text before interpolating it into the email HTML.
+function escapeHtml(value = '') {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 /**
  * Send a success email when a video is ready.
@@ -20,7 +39,7 @@ const transporter = nodemailer.createTransport({
  */
 export async function sendSuccessMail(sendTo, prompt, chatUrl) {
   const mailOptions = {
-    from: 'AnimY <contact@animy.tech>',
+    from: process.env.SMTP_FROM || 'AnimY <contact@animy.tech>',
     to: sendTo,
     subject: 'Your AnimY Video is Ready',
     headers: {
@@ -115,7 +134,7 @@ export async function sendSuccessMail(sendTo, prompt, chatUrl) {
     <div class="heading">Your video is ready</div>
     <div class="subtext">The video for your animation prompt:</div>
 
-    <div class="prompt-box">${prompt}</div>
+    <div class="prompt-box">${escapeHtml(prompt)}</div>
 
     <div class="note">
       has been successfully generated.<br>
@@ -134,12 +153,12 @@ export async function sendSuccessMail(sendTo, prompt, chatUrl) {
   };
 
   return new Promise((resolve, reject) => {
-    transporter.sendMail(mailOptions, (error, info) => {
+    getTransporter().sendMail(mailOptions, (error, info) => {
       if (error) {
-        console.error('Error sending email:', error);
+        logger.error('Error sending email:', error);
         reject(error);
       } else {
-        console.log('Email sent:', info.response);
+        logger.info('Email sent:', info.response);
         resolve();
       }
     });

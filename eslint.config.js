@@ -4,9 +4,10 @@ import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
 
 export default [
-  { ignores: ['dist'] },
+  { ignores: ['dist', '**/node_modules'] },
+  // Frontend: browser + React
   {
-    files: ['**/*.{js,jsx}'],
+    files: ['src/**/*.{js,jsx}', 'sentry.js'],
     languageOptions: {
       ecmaVersion: 2020,
       globals: globals.browser,
@@ -28,6 +29,20 @@ export default [
         'warn',
         { allowConstantExport: true },
       ],
+    },
+  },
+  // Backend + build config: Node
+  {
+    files: ['backend/**/*.js', '*.config.js'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      globals: globals.node,
+      sourceType: 'module',
+    },
+    rules: {
+      ...js.configs.recommended.rules,
+      // Express handlers keep the 4-arg signature even when `next` is unused.
+      'no-unused-vars': ['error', { args: 'none', caughtErrors: 'none', varsIgnorePattern: '^_' }],
     },
   },
 ]

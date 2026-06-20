@@ -9,8 +9,7 @@ const OpenPlayVideo = ({
   playlist = [], // Array of videos for playlist functionality
   currentIndex = 0,
   onVideoChange = null, // Callback when video changes in playlist
-  autoPlay = true,
-  showPlaylist = false
+  autoPlay = true
 }) => {
   const overlayRef = useRef(null);
   const videoRef = useRef(null);
@@ -186,6 +185,13 @@ const OpenPlayVideo = ({
     }
   }, [isOpen, isFullscreen]);
 
+  // Keep isFullscreen in sync with the browser (user may exit via Esc / UI).
+  useEffect(() => {
+    const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
+
   const handleClose = () => {
     // Stop the video first
     if (videoRef.current) {
@@ -211,14 +217,12 @@ const OpenPlayVideo = ({
   };
 
   const togglePlayPause = () => {
-    setIsPlaying(!isPlaying);
+    setIsPlaying((p) => !p);
   };
 
   const toggleMute = () => {
-    setIsMuted(!isMuted);
-    if (videoRef.current) {
-      videoRef.current.muted = !isMuted;
-    }
+    // muted={isMuted} on the element applies it declaratively.
+    setIsMuted((m) => !m);
   };
 
   const seekToTime = (time) => {
@@ -229,27 +233,28 @@ const OpenPlayVideo = ({
   };
 
   const seekForward = () => {
-    seekToTime(Math.min(duration, currentTime + 10));
+    const v = videoRef.current;
+    if (v) seekToTime(Math.min(v.duration || 0, v.currentTime + 10));
   };
 
   const seekBackward = () => {
-    seekToTime(Math.max(0, currentTime - 10));
+    const v = videoRef.current;
+    if (v) seekToTime(Math.max(0, v.currentTime - 10));
   };
 
+  // Fullscreen state is kept in sync by the fullscreenchange listener below,
+  // so these just request/exit and let the browser drive the state.
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
       overlayRef.current?.requestFullscreen();
-      setIsFullscreen(true);
     } else {
       document.exitFullscreen();
-      setIsFullscreen(false);
     }
   };
 
   const exitFullscreen = () => {
     if (document.fullscreenElement) {
       document.exitFullscreen();
-      setIsFullscreen(false);
     }
   };
 
@@ -282,9 +287,16 @@ const OpenPlayVideo = ({
 
   if (!isOpen || !video) return null;
 
+  // Only load http(s) media to avoid javascript:/data: URL injection.
+  const rawSrc = video.path || video.videoPath;
+  const videoSrc = /^https?:\/\//i.test(rawSrc || '') ? rawSrc : undefined;
+
   return (
     <div
       ref={overlayRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label={video.title || video.name || 'Video player'}
       className="fixed inset-0 z-[100] bg-black flex items-center justify-center"
       onMouseMove={handleMouseMove}
       onClick={(e) => {
@@ -298,12 +310,11 @@ const OpenPlayVideo = ({
       <div className="relative w-full h-full">
         <video
           ref={videoRef}
-          src={video.path || video.videoPath}
+          src={videoSrc}
           poster={video.thumbnailPath}
-          className="w-full h-full object-cover"
+          className="w-full h-full object-contain"
           muted={isMuted}
           onClick={togglePlayPause}
-          autoPlay={autoPlay}
         />
 
         {/* Loading Spinner */}
@@ -358,6 +369,7 @@ const OpenPlayVideo = ({
             <div className="absolute inset-0 flex items-center justify-center">
               <button
                 onClick={togglePlayPause}
+                aria-label="Play"
                 className="w-20 h-20 rounded-full bg-black/70 hover:bg-black/80 flex items-center justify-center transition-colors"
               >
                 <Play size={32} className="text-white ml-1" />
@@ -368,9 +380,19 @@ const OpenPlayVideo = ({
           {/* Bottom Controls */}
           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/70 to-transparent p-6">
             {/* Progress Bar */}
-            <div 
+            <div
+              role="slider"
+              aria-label="Seek"
+              aria-valuemin={0}
+              aria-valuemax={Math.floor(duration) || 0}
+              aria-valuenow={Math.floor(currentTime) || 0}
+              tabIndex={0}
               className="w-full h-2 bg-gray-600 rounded-full mb-6 cursor-pointer group"
               onClick={handleProgressClick}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowLeft') seekBackward();
+                else if (e.key === 'ArrowRight') seekForward();
+              }}
             >
               <div 
                 className="h-full bg-blue-500 rounded-full transition-all group-hover:bg-blue-400"
@@ -384,6 +406,7 @@ const OpenPlayVideo = ({
                 {/* Play/Pause */}
                 <button
                   onClick={togglePlayPause}
+                  aria-label={isPlaying ? 'Pause' : 'Play'}
                   className="text-white hover:text-blue-400 transition-colors hover:cursor-pointer"
                 >
                   {isPlaying ? <Pause size={28} /> : <Play size={28} />}
@@ -395,6 +418,7 @@ const OpenPlayVideo = ({
                     <button
                       onClick={() => onVideoChange && onVideoChange(Math.max(0, currentIndex - 1))}
                       disabled={currentIndex === 0}
+                      aria-label="Previous video"
                       className="text-white hover:cursor-pointer hover:text-blue-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <SkipBack size={24} />
@@ -402,6 +426,7 @@ const OpenPlayVideo = ({
                     <button
                       onClick={() => onVideoChange && onVideoChange(Math.min(playlist.length - 1, currentIndex + 1))}
                       disabled={currentIndex === playlist.length - 1}
+                      aria-label="Next video"
                       className="text-white hover:cursor-pointer hover:text-blue-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <SkipForward size={24} />
@@ -419,6 +444,7 @@ const OpenPlayVideo = ({
                 {/* Restart */}
                 <button
                   onClick={() => seekToTime(0)}
+                  aria-label="Restart"
                   className="text-white hover:text-blue-400 transition-colors hover:cursor-pointer"
                   title="Restart"
                 >
@@ -428,6 +454,7 @@ const OpenPlayVideo = ({
                 {/* Fullscreen */}
                 <button
                   onClick={toggleFullscreen}
+                  aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
                   className="text-white hover:text-blue-400 transition-colors hover:cursor-pointer"
                 >
                   {isFullscreen ? <Minimize size={24} /> : <Maximize size={24} />}

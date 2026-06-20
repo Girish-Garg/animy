@@ -10,11 +10,10 @@ import { Toaster, toast } from 'sonner';
 
 export default function ProfilePage() {
   const { signOut } = useClerk();
-  const { user, isLoaded, isSignedIn } = useUser();
+  const { user, isLoaded } = useUser();
   const [isUpdating, setIsUpdating] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [showPasswordForm, setShowPasswordForm] = useState(false);
-  const [activeTab, setActiveTab] = useState("personal");
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -24,12 +23,6 @@ export default function ProfilePage() {
     newPassword: '',
     confirmPassword: '',
   });
-
-  useEffect(() => {
-    if (!isSignedIn && isLoaded) {
-      navigate('/signin');
-    }
-  }, [isSignedIn, isLoaded]);
 
   useEffect(() => {
     if (isLoaded && user) {
@@ -56,15 +49,15 @@ export default function ProfilePage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setIsUpdating(true);
     if (!isLoaded) return;
+    setIsUpdating(true);
     try {
       await user.update({
         firstName: formData.firstName,
         lastName: formData.lastName,
       });
       toast.success('Profile updated successfully');
-    } catch (error) {
+    } catch {
       toast.error('Failed to update profile');
     } finally {
       setIsUpdating(false);
@@ -122,6 +115,16 @@ export default function ProfilePage() {
   const handleUpdateProfileImage = (e) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please choose an image file.');
+      e.target.value = '';
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image must be smaller than 5MB.');
+      e.target.value = '';
+      return;
+    }
     toast.promise(
       user.setProfileImage({ file }),
       {
@@ -130,6 +133,8 @@ export default function ProfilePage() {
         error: 'Failed to update profile image',
       }
     );
+    // Reset so re-selecting the same file fires onChange again.
+    e.target.value = '';
   };
 
   if (!isLoaded) {
@@ -190,7 +195,7 @@ export default function ProfilePage() {
           className="backdrop-blur-3xl rounded-xl shadow-xl border border-blue-900/20 hover:border-blue-700/30 transition-all duration-500 p-6 hover:shadow-blue-900/10"
           style={{background: 'linear-gradient(112deg, rgba(6, 11, 38, 0.94) 59.3%, rgba(26, 31, 55, 0.80) 100%)'}}
         >
-          <Tabs defaultValue="personal" className="w-full" onValueChange={(value) => setActiveTab(value)}>            
+          <Tabs defaultValue="personal" className="w-full">            
             <TabsList className="h-12 grid grid-cols-2 md:grid-cols-4 gap-2 bg-[#131631]/80 p-1 rounded-xl border border-blue-900/20 mb-6">              
               <TabsTrigger 
                 value="personal" 

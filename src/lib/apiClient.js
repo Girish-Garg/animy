@@ -1,7 +1,7 @@
 import axios from 'axios';
-import authManager from './authManager';
 import { toast } from 'sonner';
-import * as Sentry from "@sentry/react";
+import { getAuthToken } from './tokenBridge';
+
 const baseURL = import.meta.env.VITE_BACKEND_URL;
 
 // Create axios instance
@@ -11,20 +11,20 @@ const apiClient = axios.create({
   timeout: 30000, // 30 seconds timeout
 });
 
-// Request interceptor to add auth token
+// Request interceptor: attach a fresh Clerk token. getAuthToken() defers to
+// Clerk's getToken(), which caches/refreshes internally, so it is safe to
+// call on every request.
 apiClient.interceptors.request.use(
   async (config) => {
     try {
-      const token = await authManager.getValidToken();
-      Sentry.captureMessage(token);
+      const token = await getAuthToken();
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
       }
-      return config;
-    } catch (error) {
-      Sentry.captureException(error);
-      return config;
+    } catch {
+      // Proceed without an auth header; the response interceptor handles 401s.
     }
+    return config;
   },
   (error) => {
     return Promise.reject(error);
@@ -39,12 +39,11 @@ apiClient.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
-    // Handle 401 Unauthorized errors
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // Handle 401: force a fresh (uncached) token once and retry.
+    if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
       originalRequest._retry = true;
       try {
-        authManager.clearToken();
-        const newToken = await authManager.getValidToken();
+        const newToken = await getAuthToken({ skipCache: true });
         if (newToken) {
           originalRequest.headers.Authorization = `Bearer ${newToken}`;
           return apiClient(originalRequest);
@@ -71,16 +70,16 @@ apiClient.interceptors.response.use(
 export const apiUtils = {
   // GET request with automatic auth
   get: (url, config = {}) => apiClient.get(url, config),
-  
+
   // POST request with automatic auth
   post: (url, data, config = {}) => apiClient.post(url, data, config),
-  
+
   // PUT request with automatic auth
   put: (url, data, config = {}) => apiClient.put(url, data, config),
-  
+
   // DELETE request with automatic auth
   delete: (url, config = {}) => apiClient.delete(url, config),
-  
+
   // PATCH request with automatic auth
   patch: (url, data, config = {}) => apiClient.patch(url, data, config),
 };

@@ -6,6 +6,7 @@ const promptSchema = new Schema({
     chatId: {
         type: Schema.Types.ObjectId,
         ref: "Chat",
+        index: true,
     },
     prompt: {
         type: String,

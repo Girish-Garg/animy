@@ -3,23 +3,15 @@ import { useUser } from '@clerk/clerk-react';
 import { useNavigate } from 'react-router-dom';
 import { Send, ArrowRight, ChevronRight, Plus } from 'lucide-react';
 import AlbumOverlay from '../components/AlbumOverlay';
-import { apiUtils } from '@/lib/apiClient';
+import { useDashboard } from '@/hooks/useDashboard';
+import { chatsApi } from '@/api/chats';
 import { useRecoilValue, useRecoilState } from 'recoil';
-import { isThrottleAtom, throttleStatusSelector, isGeneratingAtom } from '../recoil/throttle';
+import { throttleStatusSelector, isGeneratingAtom } from '../recoil/throttle';
 
 export default function DashboardPage() {
-  const { user, isSignedIn, isLoaded } = useUser();
+  const { user } = useUser();
   const navigate = useNavigate();
-  const [dashboardData, setDashboardData] = useState({
-    chats: [],
-    albums: []
-  });
-  useEffect(() => {
-    if (!isSignedIn && isLoaded) {
-      navigate('/signin');
-    }
-  }, [isSignedIn, isLoaded, navigate]);
-  const [loading, setLoading] = useState(true);
+  const { chats, albums, loading, refetch: refetchDashboard } = useDashboard();
   const [inputValue, setInputValue] = useState('');
   const [albumOverlayOpen, setAlbumOverlayOpen] = useState(false);
   const [selectedAlbumId, setSelectedAlbumId] = useState(null);
@@ -47,27 +39,7 @@ export default function DashboardPage() {
     return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
 
-  const fetchDashboardData = async () => {
-    try {
-      const response = await apiUtils.get('/dashboard');
-      if (response.data.success) {
-        setDashboardData({
-          chats: response.data.chats || [],
-          albums: response.data.albums || []
-        });
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
   
-  useEffect(() => {
-    
-    if (user) {
-      setLoading(true);
-      fetchDashboardData();
-    }
-  }, [user]);
 
 
   
@@ -77,11 +49,10 @@ export default function DashboardPage() {
     if (isThrottled || isGenerating.isGenerating) return;
     try {
       setIsCreatingNewChat(true);
-      const response = await apiUtils.post('/chat', {
+      const data = await chatsApi.create({
         prompt: inputValue.trim(),
         title: inputValue.trim().slice(0, 50)
       });
-      const data = response.data;
       if (data.type === "chat_replaced" || data.type === "success") {
         setInputValue('');
         const promptId = data.promptId;
@@ -96,14 +67,14 @@ export default function DashboardPage() {
         }
       }
       setIsCreatingNewChat(false);
-    } catch (error) {
+    } catch {
       setIsCreatingNewChat(false);
     }
   };
 
   const handleAlbumClick = (albumId) => {
     // Find the album to check if it has videos
-    const album = dashboardData.albums.find(a => a._id === albumId);
+    const album = albums.find(a => a._id === albumId);
     if (!album || !album.videos || album.videos.length === 0) {
       return; // Don't open if album has no videos
     }
@@ -118,8 +89,8 @@ export default function DashboardPage() {
   };
   
   // Get latest 3 albums and 3 chats
-  const recentAlbums = dashboardData.albums?.slice(0, 3) || [];
-  const recentChats = dashboardData.chats?.slice(0, 3) || [];
+  const recentAlbums = albums?.slice(0, 3) || [];
+  const recentChats = chats?.slice(0, 3) || [];
 
   const formatDate = (dateString) => {
     const date = new Date(dateString);
@@ -415,7 +386,7 @@ export default function DashboardPage() {
         onClose={() => {
           setAlbumOverlayOpen(false);
           setSelectedAlbumId(null);
-          fetchDashboardData();
+          refetchDashboard();
         }}
         initialAlbumId={selectedAlbumId}
       />

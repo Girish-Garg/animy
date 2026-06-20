@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { X, Plus } from 'lucide-react';
 import gsap from 'gsap';
 import { toast } from 'sonner';
-import { apiUtils } from '@/lib/apiClient';
+import { albumsApi } from '@/api/albums';
+import { useModalA11y } from '@/hooks/useModalA11y';
 
 const CreateAlbumOverlay = ({ isOpen, onClose, onAlbumCreated }) => {
   const overlayRef = useRef(null);
@@ -61,6 +62,8 @@ const CreateAlbumOverlay = ({ isOpen, onClose, onAlbumCreated }) => {
     }, '-=0.1');
   };
 
+  useModalA11y(contentRef, isOpen, handleClose);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     
@@ -72,11 +75,9 @@ const CreateAlbumOverlay = ({ isOpen, onClose, onAlbumCreated }) => {
     setIsCreating(true);
 
     try {
-      const response = await apiUtils.post('/album', {
-        albumName: albumName.trim()
-      });
+      const data = await albumsApi.create(albumName.trim());
 
-      if (response.data.success) {
+      if (data.success) {
         if (onAlbumCreated) {
           onAlbumCreated();
         }
@@ -86,7 +87,7 @@ const CreateAlbumOverlay = ({ isOpen, onClose, onAlbumCreated }) => {
       } else {
         toast.error('Failed to create album. Please try again.');
       }
-    } catch (error) {
+    } catch {
       toast.error('Failed to create album. Please check your connection and try again.');
     } finally {
       setIsCreating(false);
@@ -107,8 +108,12 @@ const CreateAlbumOverlay = ({ isOpen, onClose, onAlbumCreated }) => {
       />
       
       {/* Content Container */}
-      <div 
+      <div
         ref={contentRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Create New Album"
+        tabIndex={-1}
         className="relative w-full max-w-md bg-gradient-to-br from-[#001138] to-[#0c1d43] rounded-2xl border border-blue-900/30 shadow-2xl overflow-hidden"
       >
         {/* Header */}
