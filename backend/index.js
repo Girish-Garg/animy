@@ -16,7 +16,6 @@ import * as Sentry from "@sentry/node";
 import { validateEnv } from "./config/env.js";
 import logger from "./utils/logger.js";
 
-app.set('trust proxy', 1);
 // Fail fast with a readable message if the environment is misconfigured.
 try {
   validateEnv(process.env);
@@ -36,7 +35,7 @@ if (process.env.SENTRY_DSN) {
 
 connectDB();
 const app = express();
-
+app.set('trust proxy', 1);
 // CORS: allow the configured frontend origin plus the local dev origin.
 // Undefined entries are filtered so an unset FRONTEND_URL doesn't break it.
 // Extra dev origins can be supplied via CORS_EXTRA_ORIGINS (comma-separated).
