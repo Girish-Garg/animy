@@ -7,9 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview",
+    "preview": "npm run build && wrangler dev",
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.31.8",
@@ -42,6 +43,7 @@
     "tailwind-merge": "^3.3.1"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.42.1",
     "@eslint/js": "^9.25.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
@@ -61,6 +63,7 @@
     "tailwindcss": "^4.1.8",
     "tw-animate-css": "^1.3.4",
     "vite": "^6.3.5",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.9",
+    "wrangler": "^4.103.0"
   }
 }
